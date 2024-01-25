@@ -1,8 +1,3 @@
-Response Variables:
-- Predict game winner: team_box_scores['outcome']
-- Predict total points (over/under): team_box_scores['points'] # need to sum by game using season schedule
-- Predict spread: team_box_scores['points'] # need to take delta by game using season schedule
-
 Season Schedule: 
 year	
 start_time
