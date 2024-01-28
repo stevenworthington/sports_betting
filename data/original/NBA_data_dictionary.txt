@@ -1,0 +1,21 @@
+WL: win or loss
+MIN: minutes played
+PTS: Points - The total points scored by a player or team.
+FGM: Field Goals Made - The number of field goals (baskets) a player or team has made.
+FGA: Field Goals Attempted - The number of field goal attempts by a player or team.
+FG_PCT: Field Goal Percentage - The percentage of field goal attempts that are successful (FGM divided by FGA).
+FG3M: Three-Point Field Goals Made - The number of three-point field goals a player or team has made.
+FG3A: Three-Point Field Goals Attempted - The number of three-point field goal attempts by a player or team.
+FG3_PCT: Three-Point Field Goal Percentage - The percentage of three-point field goal attempts that are successful.
+FTM: Free Throws Made - The number of free throws a player or team has made.
+FTA: Free Throws Attempted - The number of free throw attempts by a player or team.
+FT_PCT: Free Throw Percentage - The percentage of free throw attempts that are successful.
+OREB: Offensive Rebounds - The number of rebounds a player or team has grabbed on the offensive end of the court.
+DREB: Defensive Rebounds - The number of rebounds a player or team has grabbed on the defensive end of the court.
+REB: Rebounds - The total number of offensive and defensive rebounds a player or team has secured.
+AST: Assists - The number of assists, or passes leading directly to a score, made by a player or team.
+STL: Steals - The number of times a player or team has taken the ball away from the opponent, leading to a change in possession.
+BLK: Blocks - The number of shots a player or team has deflected or stopped, preventing them from potentially scoring.
+TOV: Turnovers - The number of times a player or team has lost possession of the ball to the opponent.
+PF: Personal Fouls - The number of personal fouls committed by a player or team.
+PLUS_MINUS: Plus/Minus - A statistic that measures the point differential when a player is on the court (how much the team's score went up or down).
