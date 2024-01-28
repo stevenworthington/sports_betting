@@ -1,0 +1,25 @@
+ATL vs Portland (Total Points | ATL POINTS and POR POints)
+
+[Team 2023/2024 Atlanta Hawks]
+[Summar]
+[Team - wide inputs (Season So Far)] [Team - wide inputs] -> <Total Point>
+
+Home Team                   Away Team
+[RANK, A PPG, OR, DR, P] - [RANK, A PPG, OR, DR, P] -> <Total Points> 1/02/2024
+19 90 
+
+
+Team-wide stats after 3 games
+
+Take 3 box scores -> Compute
+
+
+Game 26
+Home        Away 
+Window 3    Window 3
+Game 25     Game 25
+Game 24     Game 24
+Game 23     Game 23
+
+Game-Wide 
+99, 10, 6, 58% TS, 24 FTs

@@ -1,0 +1,23 @@
+[project]
+name = "collector"
+version = "0.1.0"
+description = "Default template for PDM package"
+authors = [
+    {name = "James Milliman", email = "jaimsmilliman@gmail.com"},
+]
+dependencies = [
+    "pandas>=2.2.0",
+    "nba-api>=1.4.1",
+]
+requires-python = "==3.9.*"
+readme = "README.md"
+license = {text = "MIT"}
+
+
+[tool.pdm]
+distribution = false
+
+[tool.pdm.dev-dependencies]
+eda = [
+    "jupyter>=1.0.0",
+]
