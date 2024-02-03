@@ -221,18 +221,91 @@ def plot_team_bs_stats(df, team_col, feature_prefix, n_rows=3, n_cols=3):
     
 
 #################################################################################
-##### Function to create a rolling window time series split
+##### Function to scale data for modeling
 #################################################################################
-def rolling_window_ts_split(df, train_size, test_size):
+def scale_data(features, target, scaler='minmax', scale_target=False):
     """
-    Generate indices to split data into training and test set for rolling window time series cross-validation.
+    Scale the features (and optionally the target) of a dataset.
+    
+    Parameters:
+    - features: DataFrame containing the features to scale.
+    - target: Series or DataFrame containing the target variable.
+    - scaler: String, either 'minmax' for MinMaxScaler or 'standard' for StandardScaler.
+    - scale_target: Boolean, whether to scale the target variable or not.
 
-    :param df: DataFrame to split.
-    :param train_size: The size of the training set.
-    :param test_size: The size of the test set.
-    :return: Yield the indices for the train and test sets.
+    Returns:
+    - DataFrame with scaled features (and target if scale_target is True), with index reset.
     """
     import numpy as np
+    import pandas as pd
+    from sklearn.preprocessing import MinMaxScaler, StandardScaler
+
+    # initialize the scaler based on the input
+    if scaler == 'minmax':
+        scaler = MinMaxScaler()
+    elif scaler == 'standard':
+        scaler = StandardScaler()
+    else:
+        raise ValueError("scaler must be either 'minmax' or 'standard'")
+    
+    # scale features
+    scaled_features = scaler.fit_transform(features)
+    
+    # prepare column names for the resulting DataFrame
+    col_names = features.columns.tolist()
+    
+    if scale_target:
+        # scale target if required using the same scaler initialized above
+        scaled_target = scaler.fit_transform(target.values.reshape(-1, 1))
+        # combine scaled features and target
+        scaled_data = np.concatenate([scaled_features, scaled_target], axis=1)
+        # add the target column name
+        col_names.append(target.name)
+    else:
+        # combine scaled features with unscaled target by ensuring target is properly shaped
+        target_array = target.values.reshape(-1, 1) if len(target.shape) == 1 else target
+        scaled_data = np.concatenate([scaled_features, target_array], axis=1)
+        # add the target column name
+        col_names.append(target.name)
+        
+    # convert scaled data back to DataFrame, assign column names, and reset index
+    scaled_data_df = pd.DataFrame(scaled_data, columns=col_names)
+    scaled_data_df = scaled_data_df.reset_index(drop=True)
+    
+    return scaled_data_df
+
+
+#################################################################################
+##### Function to create a rolling window time series split
+#################################################################################
+def rolling_window_ts_split(df, train_size, test_size, ensure_diversity=False, target_col=None):
+    """
+    Generate indices to split data into training and test sets for rolling window time series cross-validation.
+    
+    Optionally ensures that the initial training set includes a diversity of classes for logistic regression training.
+    
+    Parameters:
+    - df (pd.DataFrame): The DataFrame containing both features and the target column.
+    - train_size (int): The size of the training set for each split.
+    - test_size (int): The size of the test set for each split.
+    - ensure_diversity (bool): If True, checks to ensure the initial training set includes at least two classes. Default is False.
+    - target_col (str): The name of the target column to check for class diversity. Required if ensure_diversity is True.
+    
+    Yields:
+    - train_indices (np.array): Indices for the training set for each split.
+    - test_indices (np.array): Indices for the test set for each split.
+    
+    Raises:
+    - ValueError: If the dataset is not large enough for the specified train and test sizes, or if ensure_diversity is True but the initial training set does not include both classes.
+    """
+    import numpy as np
+    
+    if ensure_diversity and target_col is not None:
+        # Ensure initial training set includes both classes, adjust train_size if necessary
+        target_values = df[target_col].values
+        unique_classes = np.unique(target_values[:train_size])
+        if len(unique_classes) < 2:
+            raise ValueError("Initial training set does not include both classes.")
     
     if len(df) < train_size + test_size:
         raise ValueError("The dataset is not large enough for the specified train and test sizes.")
@@ -242,4 +315,44 @@ def rolling_window_ts_split(df, train_size, test_size):
 
     for start_index in range(max_start_index):
         yield indices[start_index: start_index + train_size], indices[start_index + train_size: start_index + train_size + test_size]
+        
+        
+#################################################################################
+##### Function to create an expanding window time series split for binary targets
+#################################################################################
+def expanding_window_ts_split(df, initial_train_size, test_size=1, ensure_diversity=True, target_col=None):
+    """
+    Generate indices to split data into training and test sets for expanding window time series cross-validation,
+    with an option to ensure that the initial training set includes a diversity of classes.
+    
+    Parameters:
+    - df (pd.DataFrame): The DataFrame to be split, which should contain both features and the target column.
+    - initial_train_size (int): The initial size of the training set, which will expand in each subsequent split.
+    - test_size (int): The size of the test set for each split. Default is 1.
+    - ensure_diversity (bool): If True, adjusts the initial_train_size to ensure the training set starts with both classes present, if the target column's diversity allows for it. Default is True.
+    - target_col (str): The name of the target column to check for class diversity. Required if ensure_diversity is True.
+    
+    Yields:
+    - train_indices (np.array): Indices for the training set for each split, which expands in size over iterations.
+    - test_indices (np.array): Indices for the test set for each split.
+    
+    Raises:
+    - ValueError: If the dataset is not large enough for the specified initial train size and test size, or if the initial training set does not include both classes when ensure_diversity is True.
+    """
+    import numpy as np
+    
+    if ensure_diversity and target_col is not None:
+        target_values = df[target_col].values
+        second_class_start = np.min(np.where(target_values != target_values[0])[0])
+        initial_train_size = max(initial_train_size, second_class_start + 1)
+
+    if len(df) < initial_train_size + test_size:
+        raise ValueError("Dataset is not large enough for the specified initial train size and test size.")
+
+    indices = np.arange(len(df))
+    for start_index in range(initial_train_size, len(df) - test_size + 1):
+        train_indices = indices[:start_index]
+        test_indices = indices[start_index: start_index + test_size]
+        yield train_indices, test_indices
+        
         
