@@ -276,6 +276,53 @@ def scale_data(features, target, scaler='minmax', scale_target=False):
 
 
 #################################################################################
+##### Function to load, filter (by time) and scale data for modeling
+#################################################################################
+def load_and_scale_data(file_path, date_cutoff='2019-09-01', scaler_type='minmax', scale_target=False):
+    """
+    Loads data from a specified file, filters based on a date cutoff, scales the features, 
+    and returns three DataFrames each targeted to a different outcome variable.
+
+    Parameters:
+    - file_path (str): The file path to the CSV containing the data.
+    - date_cutoff (str): The cutoff date to filter the DataFrame. Format should be 'YYYY-MM-DD'.
+    - scaler_type (str): The type of scaler to use for feature scaling. Defaults to 'minmax'.
+                         Acceptable values are 'minmax' for MinMaxScaler and 'standard' for StandardScaler.
+    - scale_target (bool): Whether to scale the target variable or just the features.
+    
+    Returns:
+    - Tuple of DataFrames: (pts_scaled_df, pm_scaled_df, res_scaled_df) where each DataFrame 
+      corresponds to scaled features with one of the targets being TOTAL_PTS, PLUS_MINUS, and GAME_RESULT.
+    """
+    import pandas as pd
+    
+    # load the dataset
+    df = pd.read_csv(file_path)
+    
+    # convert 'GAME_DATE' column to datetime
+    df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
+    
+    # filter data to time span of interest
+    filtered_df = df[df['GAME_DATE'] >= date_cutoff]
+    
+    # feature columns
+    feature_names = [col for col in filtered_df.columns if col.startswith('ROLL_')]
+    features = filtered_df[feature_names]
+    
+    # target columns
+    target_pts = filtered_df['TOTAL_PTS']
+    target_pm = filtered_df['PLUS_MINUS']
+    target_res = filtered_df['GAME_RESULT']
+    
+    # scale data
+    pts_scaled_df = scale_data(features, target_pts, scaler=scaler_type, scale_target=scale_target)
+    pm_scaled_df = scale_data(features, target_pm, scaler=scaler_type, scale_target=scale_target)
+    res_scaled_df = scale_data(features, target_res, scaler=scaler_type, scale_target=scale_target)
+    
+    return pts_scaled_df, pm_scaled_df, res_scaled_df
+
+
+#################################################################################
 ##### Function to create a rolling window time series split
 #################################################################################
 def rolling_window_ts_split(df, train_size, test_size, ensure_diversity=False, target_col=None):
