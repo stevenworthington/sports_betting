@@ -318,7 +318,7 @@ def rolling_window_ts_split(df, train_size, test_size, ensure_diversity=False, t
         
         
 #################################################################################
-##### Function to create an expanding window time series split for binary targets
+##### Function to create an expanding window time series split
 #################################################################################
 def expanding_window_ts_split(df, initial_train_size, test_size=1, ensure_diversity=True, target_col=None):
     """
@@ -355,4 +355,169 @@ def expanding_window_ts_split(df, initial_train_size, test_size=1, ensure_divers
         test_indices = indices[start_index: start_index + test_size]
         yield train_indices, test_indices
         
+
+#################################################################################
+##### Function to train models on an expanding window time series split
+#################################################################################
+def train_with_expanding_window(df, initial_train_size, test_size, target_col, model, ensure_diversity=False):
+    """
+    Trains a given model using an expanding window approach on a specified DataFrame.
+
+    Parameters:
+    - df (pd.DataFrame): The DataFrame containing the features and target variable.
+    - initial_train_size (int): The initial size of the training dataset.
+    - test_size (int): The size of the test dataset for each split, typically 1 for LOO CV.
+    - target_col (str): The name of the target column in `df`.
+    - model (model object): The instantiated model to be trained, e.g., LinearRegression() or LogisticRegression().
+    - ensure_diversity (bool, optional): For logistic regression, ensures the initial training data includes both classes. Default is False.
+
+    Returns:
+    - model_outputs (list): A list of model predictions or probabilities for the test sets across all splits.
+    - y_true (list): A list of the actual target values corresponding to each prediction in `model_outputs`.
+
+    This function iterates over the dataset using an expanding window to create training and test splits, 
+    trains the specified `model` on each training split, and stores the model's predictions or probabilities.
+    """
+    import time
+    from sklearn.linear_model import LinearRegression, LogisticRegression 
+    
+    start_time = time.time()
+
+    # initialize storage for model outputs and true labels
+    model_outputs = []  # store predictions or probabilities
+    y_true = []
+
+    for train_indices, test_indices in expanding_window_ts_split(
+        df, initial_train_size, test_size=test_size, ensure_diversity=ensure_diversity, 
+        target_col=target_col if ensure_diversity else None):
         
+        # get training and testing data for this window
+        X_train = df.iloc[train_indices].drop(columns=target_col)
+        y_train = df.iloc[train_indices][target_col]
+        X_test = df.iloc[test_indices].drop(columns=target_col)
+        y_test = df.iloc[test_indices][target_col]
+            
+        # train the model
+        model.fit(X_train, y_train)
+
+        # store model output
+        if isinstance(model, LogisticRegression):
+            # store predicted probabilities of the positive class for logistic regression
+            proba = model.predict_proba(X_test)[:, 1]
+            model_outputs.extend(proba)
+        elif isinstance(model, LinearRegression):
+            # store predictions for linear regression
+            predictions = model.predict(X_test)
+            model_outputs.extend(predictions)
+
+        # store true labels for evaluation
+        y_true.extend(y_test)
+
+    end_time = time.time()
+    print(f"Total time taken: {end_time - start_time:.2f} seconds")
+
+    return model_outputs, y_true
+
+
+#################################################################################
+##### Function to train models on an rolling window time series split
+#################################################################################
+def train_with_rolling_window(df, train_size, test_size, target_col, model, ensure_diversity=False):
+    """
+    Trains a specified model using a rolling window approach on a DataFrame.
+
+    Parameters:
+    - df (pd.DataFrame): The DataFrame containing both features and the target variable.
+    - train_size (int): The size of the training set for each split.
+    - test_size (int): The size of the test set for each split, typically 1 for leave-one-out cross-validation.
+    - target_col (str): The name of the target column in `df`.
+    - model (model object): The instantiated model to be trained. This can be any model that conforms to the scikit-learn model interface, such as instances of `LinearRegression` or `LogisticRegression`.
+    - ensure_diversity (bool, optional): Indicates whether to ensure the initial training data includes a diverse set of classes for classification tasks. This is primarily relevant for logistic regression and similar models where class diversity in the training set might impact model training. Default is False.
+
+    Returns:
+    - model_outputs (list): A list of model predictions or probabilities for the test sets across all splits. For logistic regression models, this will be the probabilities of the positive class. For linear regression models, it will be direct predictions.
+    - y_true (list): A list of actual target values corresponding to each prediction in `model_outputs`.
+
+    The function iterates over the dataset using a rolling window to create training and test splits. It then trains the specified `model` on each training split and stores the model's predictions or probabilities for further evaluation.
+    """
+    import time
+    from sklearn.linear_model import LinearRegression, LogisticRegression
+
+    start_time = time.time()
+
+    # initialize storage for model outputs and true labels
+    model_outputs = []  # store predictions or probabilities
+    y_true = []
+
+    # use the rolling window index function for data splits
+    for train_indices, test_indices in rolling_window_ts_split(
+        df, train_size, test_size, ensure_diversity=ensure_diversity, 
+        target_col=target_col if ensure_diversity else None):
+        
+        # get training and testing data for this window
+        X_train = df.iloc[train_indices].drop(columns=target_col)
+        y_train = df.iloc[train_indices][target_col]
+        X_test = df.iloc[test_indices].drop(columns=target_col)
+        y_test = df.iloc[test_indices][target_col]
+
+        # train the model and store the appropriate outputs
+        model.fit(X_train, y_train)
+        if isinstance(model, LogisticRegression):
+            # store predicted probabilities of the positive class for logistic regression
+            proba = model.predict_proba(X_test)[:, 1]
+            model_outputs.extend(proba)
+        elif isinstance(model, LinearRegression):
+            # store predictions for linear regression
+            predictions = model.predict(X_test)
+            model_outputs.extend(predictions)
+
+        # store true labels for evaluation
+        y_true.extend(y_test)
+
+    end_time = time.time()
+    print(f"Total time taken: {end_time - start_time:.2f} seconds")
+
+    return model_outputs, y_true
+
+
+#################################################################################
+##### Function to calculate performance metrics from trained models
+#################################################################################
+def calculate_metrics(y_true, model_outputs, model_type='linear'):
+    """
+    Calculates and prints evaluation metrics based on the model type and provided data.
+
+    Parameters:
+    - y_true (list): The actual target values.
+    - model_outputs (list): The model's predictions or probabilities for each target value in `y_true`.
+    - model_type (str, optional): The type of model used for predictions ('linear' or 'logistic'). Default is 'linear'.
+
+    For a 'linear' model_type, this function calculates and prints the Root Mean Squared Error (RMSE).
+    For a 'logistic' model_type, it calculates and prints the Average Accuracy, Overall AUC, and Average F1 Score.
+
+    No return value; the function prints the calculated metrics directly.
+    """
+    from sklearn.metrics import mean_squared_error, roc_auc_score, accuracy_score, f1_score
+    import numpy as np
+       
+    metrics = {}  # initialize empty dictionary to store metrics
+    
+    if model_type == 'logistic':
+        # convert probabilities to binary predictions using a 0.5 threshold
+        metrics['pred_labels'] = [1 if p > 0.5 else 0 for p in model_outputs]
+        metrics['prob_predictions'] = model_outputs  # store the probabilities for ROC curve plotting
+        metrics['average_accuracy'] = accuracy_score(y_true, metrics['pred_labels'])
+        metrics['overall_auc'] = roc_auc_score(y_true, metrics['prob_predictions'])
+        metrics['average_f1_score'] = f1_score(y_true, metrics['pred_labels'])
+        # print metrics
+        print(f"Logistic Regression Metrics:\n- Average Accuracy: {metrics['average_accuracy']:.2f}\n- Overall AUC: {metrics['overall_auc']:.2f}\n- Average F1 Score: {metrics['average_f1_score']:.2f}")
+    elif model_type == 'linear':
+        # calculate and store RMSE for linear regression
+        metrics['average_rmse'] = mean_squared_error(y_true, model_outputs, squared=False)
+        # print RMSE
+        print(f"Linear Regression Metrics:\n- Average RMSE: {metrics['average_rmse']:.2f}")
+    else:
+        print("Invalid model type specified.")
+        return None  # return None if an invalid model type is specified
+    
+    return metrics
