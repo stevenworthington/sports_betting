@@ -278,14 +278,15 @@ def scale_data(features, target, scaler='minmax', scale_target=False):
 #################################################################################
 ##### Function to load, filter (by time) and scale data for modeling
 #################################################################################
-def load_and_scale_data(file_path, date_cutoff='2019-09-01', scaler_type='minmax', scale_target=False):
+def load_and_scale_data(file_path, start_date='2021-10-01', end_date='2023-07-31', scaler_type='minmax', scale_target=False):
     """
     Loads data from a specified file, filters based on a date cutoff, scales the features, 
     and returns three DataFrames each targeted to a different outcome variable.
 
     Parameters:
     - file_path (str): The file path to the CSV containing the data.
-    - date_cutoff (str): The cutoff date to filter the DataFrame. Format should be 'YYYY-MM-DD'.
+    - start_date (str): The starting date to filter the DataFrame. Format should be 'YYYY-MM-DD'.
+    - end_date (str): The ending date to filter the DataFrame. Format should be 'YYYY-MM-DD'.
     - scaler_type (str): The type of scaler to use for feature scaling. Defaults to 'minmax'.
                          Acceptable values are 'minmax' for MinMaxScaler and 'standard' for StandardScaler.
     - scale_target (bool): Whether to scale the target variable or just the features.
@@ -303,7 +304,7 @@ def load_and_scale_data(file_path, date_cutoff='2019-09-01', scaler_type='minmax
     df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
     
     # filter data to time span of interest
-    filtered_df = df[df['GAME_DATE'] >= date_cutoff]
+    filtered_df = df[(df['GAME_DATE'] >= start_date) & (df['GAME_DATE'] <= end_date)]
     
     # feature columns
     feature_names = [col for col in filtered_df.columns if col.startswith('ROLL_')]
@@ -319,55 +320,16 @@ def load_and_scale_data(file_path, date_cutoff='2019-09-01', scaler_type='minmax
     pm_scaled_df = scale_data(features, target_pm, scaler=scaler_type, scale_target=scale_target)
     res_scaled_df = scale_data(features, target_res, scaler=scaler_type, scale_target=scale_target)
     
+    # print number of unique games in data
+    print('Number of Games in Sample:', filtered_df['GAME_ID'].nunique())
+    
     return pts_scaled_df, pm_scaled_df, res_scaled_df
 
-
-#################################################################################
-##### Function to create a rolling window time series split
-#################################################################################
-def rolling_window_ts_split(df, train_size, test_size, ensure_diversity=False, target_col=None):
-    """
-    Generate indices to split data into training and test sets for rolling window time series cross-validation.
-    
-    Optionally ensures that the initial training set includes a diversity of classes for logistic regression training.
-    
-    Parameters:
-    - df (pd.DataFrame): The DataFrame containing both features and the target column.
-    - train_size (int): The size of the training set for each split.
-    - test_size (int): The size of the test set for each split.
-    - ensure_diversity (bool): If True, checks to ensure the initial training set includes at least two classes. Default is False.
-    - target_col (str): The name of the target column to check for class diversity. Required if ensure_diversity is True.
-    
-    Yields:
-    - train_indices (np.array): Indices for the training set for each split.
-    - test_indices (np.array): Indices for the test set for each split.
-    
-    Raises:
-    - ValueError: If the dataset is not large enough for the specified train and test sizes, or if ensure_diversity is True but the initial training set does not include both classes.
-    """
-    import numpy as np
-    
-    if ensure_diversity and target_col is not None:
-        # Ensure initial training set includes both classes, adjust train_size if necessary
-        target_values = df[target_col].values
-        unique_classes = np.unique(target_values[:train_size])
-        if len(unique_classes) < 2:
-            raise ValueError("Initial training set does not include both classes.")
-    
-    if len(df) < train_size + test_size:
-        raise ValueError("The dataset is not large enough for the specified train and test sizes.")
-
-    indices = np.arange(len(df))
-    max_start_index = len(df) - train_size - test_size + 1
-
-    for start_index in range(max_start_index):
-        yield indices[start_index: start_index + train_size], indices[start_index + train_size: start_index + train_size + test_size]
-        
         
 #################################################################################
 ##### Function to create an expanding window time series split
 #################################################################################
-def expanding_window_ts_split(df, initial_train_size, test_size=1, ensure_diversity=True, target_col=None):
+def expanding_window_ts_split(df, initial_train_size, test_size=1, ensure_diversity=False, target_col=None, expansion_limit=None):
     """
     Generate indices to split data into training and test sets for expanding window time series cross-validation,
     with an option to ensure that the initial training set includes a diversity of classes.
@@ -376,8 +338,9 @@ def expanding_window_ts_split(df, initial_train_size, test_size=1, ensure_divers
     - df (pd.DataFrame): The DataFrame to be split, which should contain both features and the target column.
     - initial_train_size (int): The initial size of the training set, which will expand in each subsequent split.
     - test_size (int): The size of the test set for each split. Default is 1.
-    - ensure_diversity (bool): If True, adjusts the initial_train_size to ensure the training set starts with both classes present, if the target column's diversity allows for it. Default is True.
+    - ensure_diversity (bool): If True, adjusts the initial_train_size to ensure the training set starts with both classes present, if the target column's diversity allows for it. Default is False.
     - target_col (str): The name of the target column to check for class diversity. Required if ensure_diversity is True.
+    - expansion_limit (int, optional): The maximum number of times the training set is expanded by 1 observation during the expanding window process. This parameter controls the total number of train-test splits generated, indirectly determining the final size of the training set. If set, the training process will stop once this limit is reached, potentially leaving some data unused. If None, the training set will expand until all but the last observation are used for training.
     
     Yields:
     - train_indices (np.array): Indices for the training set for each split, which expands in size over iterations.
@@ -397,16 +360,23 @@ def expanding_window_ts_split(df, initial_train_size, test_size=1, ensure_divers
         raise ValueError("Dataset is not large enough for the specified initial train size and test size.")
 
     indices = np.arange(len(df))
+    expansion_count = 0  # initialize expansion count
+
     for start_index in range(initial_train_size, len(df) - test_size + 1):
+        if expansion_limit is not None and expansion_count >= expansion_limit:
+            break  # stop yielding new splits once the expansion limit is reached
+
         train_indices = indices[:start_index]
         test_indices = indices[start_index: start_index + test_size]
         yield train_indices, test_indices
+
+        expansion_count += 1  # increment expansion count for each iteration
         
 
 #################################################################################
 ##### Function to train models on an expanding window time series split
 #################################################################################
-def train_with_expanding_window(df, initial_train_size, test_size, target_col, model, ensure_diversity=False):
+def train_with_expanding_window(df, initial_train_size, test_size, target_col, model, ensure_diversity=False, expansion_limit=None):
     """
     Trains a given model using an expanding window approach on a specified DataFrame.
 
@@ -417,6 +387,7 @@ def train_with_expanding_window(df, initial_train_size, test_size, target_col, m
     - target_col (str): The name of the target column in `df`.
     - model (model object): The instantiated model to be trained, e.g., LinearRegression() or LogisticRegression().
     - ensure_diversity (bool, optional): For logistic regression, ensures the initial training data includes both classes. Default is False.
+    - expansion_limit (int, optional): The maximum number of times the training set is expanded by 1 observation during the expanding window process. This parameter controls the total number of train-test splits generated, indirectly determining the final size of the training set. If set, the training process will stop once this limit is reached, potentially leaving some data unused. If None, the training set will expand until all but the last observation are used for training.
 
     Returns:
     - model_outputs (list): A list of model predictions or probabilities for the test sets across all splits.
@@ -426,7 +397,6 @@ def train_with_expanding_window(df, initial_train_size, test_size, target_col, m
     trains the specified `model` on each training split, and stores the model's predictions or probabilities.
     """
     import time
-    from sklearn.linear_model import LinearRegression, LogisticRegression 
     
     start_time = time.time()
 
@@ -436,7 +406,7 @@ def train_with_expanding_window(df, initial_train_size, test_size, target_col, m
 
     for train_indices, test_indices in expanding_window_ts_split(
         df, initial_train_size, test_size=test_size, ensure_diversity=ensure_diversity, 
-        target_col=target_col if ensure_diversity else None):
+        target_col=target_col if ensure_diversity else None, expansion_limit=expansion_limit):
         
         # get training and testing data for this window
         X_train = df.iloc[train_indices].drop(columns=target_col)
@@ -446,16 +416,18 @@ def train_with_expanding_window(df, initial_train_size, test_size, target_col, m
             
         # train the model
         model.fit(X_train, y_train)
-
-        # store model output
-        if isinstance(model, LogisticRegression):
-            # store predicted probabilities of the positive class for logistic regression
+        
+        # check if the model has the predict_proba method (i.e., likely a classifier)
+        if hasattr(model, 'predict_proba'):
+            # store predicted probabilities of the positive class
             proba = model.predict_proba(X_test)[:, 1]
             model_outputs.extend(proba)
-        elif isinstance(model, LinearRegression):
-            # store predictions for linear regression
+        elif hasattr(model, 'predict'):
+            # for models that support predict (regressors and classifiers without predict_proba)
             predictions = model.predict(X_test)
             model_outputs.extend(predictions)
+        else:
+            raise ValueError("Model does not support required prediction methods.")
 
         # store true labels for evaluation
         y_true.extend(y_test)
@@ -467,9 +439,53 @@ def train_with_expanding_window(df, initial_train_size, test_size, target_col, m
 
 
 #################################################################################
+##### Function to create a rolling window time series split
+#################################################################################
+def rolling_window_ts_split(df, train_size, test_size, ensure_diversity=False, target_col=None, advancement_limit=None):
+    """
+    Generate indices to split data into training and test sets for rolling window time series cross-validation.
+    
+    Optionally ensures that the initial training set includes a diversity of classes for logistic regression training.
+    
+    Parameters:
+    - df (pd.DataFrame): The DataFrame containing both features and the target column.
+    - train_size (int): The size of the training set for each split.
+    - test_size (int): The size of the test set for each split.
+    - ensure_diversity (bool): If True, checks to ensure the initial training set includes at least two classes. Default is False.
+    - target_col (str): The name of the target column to check for class diversity. Required if ensure_diversity is True.
+    - - advancement_limit (int, optional): Specifies the maximum number of times the training window is allowed to advance during the rolling window process. This parameter effectively limits the number of train-test splits generated, allowing for control over the number of models trained and tested, which can be useful for large datasets or for limiting computational expense. If not set, or if set to None, the window will advance until it reaches the end of the dataset, making use of all possible train-test splits given the `train_size` and `test_size` parameters. Setting this parameter helps in focusing the training and testing process on a specific subset of the dataset, potentially leaving some data unused at the end of the dataset.
+    
+    Yields:
+    - train_indices (np.array): Indices for the training set for each split.
+    - test_indices (np.array): Indices for the test set for each split.
+    
+    Raises:
+    - ValueError: If the dataset is not large enough for the specified train and test sizes, or if ensure_diversity is True but the initial training set does not include both classes.
+    """
+    import numpy as np
+    
+    if ensure_diversity and target_col is not None:
+        # ensure initial training set includes both classes, adjust train_size if necessary
+        target_values = df[target_col].values
+        unique_classes = np.unique(target_values[:train_size])
+        if len(unique_classes) < 2:
+            raise ValueError("Initial training set does not include both classes.")
+    
+    if len(df) < train_size + test_size:
+        raise ValueError("The dataset is not large enough for the specified train and test sizes.")
+
+    indices = np.arange(len(df))
+    max_start_index = len(df) - train_size - test_size + 1
+    actual_advancements = min(advancement_limit, max_start_index) if advancement_limit is not None else max_start_index
+
+    for start_index in range(actual_advancements):
+        yield indices[start_index: start_index + train_size], indices[start_index + train_size: start_index + train_size + test_size]
+
+
+#################################################################################
 ##### Function to train models on an rolling window time series split
 #################################################################################
-def train_with_rolling_window(df, train_size, test_size, target_col, model, ensure_diversity=False):
+def train_with_rolling_window(df, train_size, test_size, target_col, model, ensure_diversity=False, advancement_limit=None):
     """
     Trains a specified model using a rolling window approach on a DataFrame.
 
@@ -480,6 +496,7 @@ def train_with_rolling_window(df, train_size, test_size, target_col, model, ensu
     - target_col (str): The name of the target column in `df`.
     - model (model object): The instantiated model to be trained. This can be any model that conforms to the scikit-learn model interface, such as instances of `LinearRegression` or `LogisticRegression`.
     - ensure_diversity (bool, optional): Indicates whether to ensure the initial training data includes a diverse set of classes for classification tasks. This is primarily relevant for logistic regression and similar models where class diversity in the training set might impact model training. Default is False.
+    - advancement_limit (int, optional): Specifies the maximum number of times the training window is allowed to advance during the rolling window process. This parameter effectively limits the number of train-test splits generated, allowing for control over the number of models trained and tested, which can be useful for large datasets or for limiting computational expense. If not set, or if set to None, the window will advance until it reaches the end of the dataset, making use of all possible train-test splits given the `train_size` and `test_size` parameters. Setting this parameter helps in focusing the training and testing process on a specific subset of the dataset, potentially leaving some data unused at the end of the dataset.
 
     Returns:
     - model_outputs (list): A list of model predictions or probabilities for the test sets across all splits. For logistic regression models, this will be the probabilities of the positive class. For linear regression models, it will be direct predictions.
@@ -488,7 +505,6 @@ def train_with_rolling_window(df, train_size, test_size, target_col, model, ensu
     The function iterates over the dataset using a rolling window to create training and test splits. It then trains the specified `model` on each training split and stores the model's predictions or probabilities for further evaluation.
     """
     import time
-    from sklearn.linear_model import LinearRegression, LogisticRegression
 
     start_time = time.time()
 
@@ -499,24 +515,28 @@ def train_with_rolling_window(df, train_size, test_size, target_col, model, ensu
     # use the rolling window index function for data splits
     for train_indices, test_indices in rolling_window_ts_split(
         df, train_size, test_size, ensure_diversity=ensure_diversity, 
-        target_col=target_col if ensure_diversity else None):
+        target_col=target_col if ensure_diversity else None, advancement_limit=advancement_limit):
         
         # get training and testing data for this window
         X_train = df.iloc[train_indices].drop(columns=target_col)
         y_train = df.iloc[train_indices][target_col]
         X_test = df.iloc[test_indices].drop(columns=target_col)
         y_test = df.iloc[test_indices][target_col]
-
-        # train the model and store the appropriate outputs
+        
+        # train the model
         model.fit(X_train, y_train)
-        if isinstance(model, LogisticRegression):
-            # store predicted probabilities of the positive class for logistic regression
+        
+        # check if the model has the predict_proba method (i.e., likely a classifier)
+        if hasattr(model, 'predict_proba'):
+            # store predicted probabilities of the positive class
             proba = model.predict_proba(X_test)[:, 1]
             model_outputs.extend(proba)
-        elif isinstance(model, LinearRegression):
-            # store predictions for linear regression
+        elif hasattr(model, 'predict'):
+            # for models that support predict (regressors and classifiers without predict_proba)
             predictions = model.predict(X_test)
             model_outputs.extend(predictions)
+        else:
+            raise ValueError("Model does not support required prediction methods.")
 
         # store true labels for evaluation
         y_true.extend(y_test)
@@ -530,41 +550,38 @@ def train_with_rolling_window(df, train_size, test_size, target_col, model, ensu
 #################################################################################
 ##### Function to calculate performance metrics from trained models
 #################################################################################
-def calculate_metrics(y_true, model_outputs, model_type='linear'):
+def calculate_metrics(y_true, model_outputs, threshold=0.5):
     """
-    Calculates and prints evaluation metrics based on the model type and provided data.
+    Calculates and returns evaluation metrics based on the provided data, automatically determining 
+    whether to treat the task as a classification or regression problem by inspecting `y_true`.
+    For classification tasks, a custom threshold can be specified for converting probabilities to binary labels.
 
     Parameters:
-    - y_true (list): The actual target values.
-    - model_outputs (list): The model's predictions or probabilities for each target value in `y_true`.
-    - model_type (str, optional): The type of model used for predictions ('linear' or 'logistic'). Default is 'linear'.
+    - y_true (list or np.array): The actual target values.
+    - model_outputs (list or np.array): The model's predictions or probabilities for classifiers, or direct predictions for regressors.
+    - threshold (float, optional): The threshold for converting probabilities to binary labels in classification tasks. Default is 0.5.
 
-    For a 'linear' model_type, this function calculates and prints the Root Mean Squared Error (RMSE).
-    For a 'logistic' model_type, it calculates and prints the Average Accuracy, Overall AUC, and Average F1 Score.
+    For binary classification tasks, it calculates and prints Average Accuracy, Overall AUC, and Average F1 Score.
+    For regression tasks, it calculates and prints the Root Mean Squared Error (RMSE).
 
-    No return value; the function prints the calculated metrics directly.
+    Returns:
+    - metrics (dict): A dictionary containing the calculated metrics.
     """
     from sklearn.metrics import mean_squared_error, roc_auc_score, accuracy_score, f1_score
     import numpy as np
-       
-    metrics = {}  # initialize empty dictionary to store metrics
-    
-    if model_type == 'logistic':
-        # convert probabilities to binary predictions using a 0.5 threshold
-        metrics['pred_labels'] = [1 if p > 0.5 else 0 for p in model_outputs]
-        metrics['prob_predictions'] = model_outputs  # store the probabilities for ROC curve plotting
-        metrics['average_accuracy'] = accuracy_score(y_true, metrics['pred_labels'])
-        metrics['overall_auc'] = roc_auc_score(y_true, metrics['prob_predictions'])
-        metrics['average_f1_score'] = f1_score(y_true, metrics['pred_labels'])
-        # print metrics
-        print(f"Logistic Regression Metrics:\n- Average Accuracy: {metrics['average_accuracy']:.2f}\n- Overall AUC: {metrics['overall_auc']:.2f}\n- Average F1 Score: {metrics['average_f1_score']:.2f}")
-    elif model_type == 'linear':
-        # calculate and store RMSE for linear regression
+
+    metrics = {} # dictionary to store calculated metrics
+
+    unique_values = np.unique(y_true)
+    if len(unique_values) == 2: # binary classification
+        pred_labels = [1 if p > threshold else 0 for p in model_outputs]
+        metrics['pred_labels'] = pred_labels
+        metrics['average_accuracy'] = accuracy_score(y_true, pred_labels)
+        metrics['overall_auc'] = roc_auc_score(y_true, model_outputs)
+        metrics['average_f1_score'] = f1_score(y_true, pred_labels)
+        print(f"Classification Metrics:\n- Average Accuracy: {metrics['average_accuracy']:.2f}\n- Overall AUC: {metrics['overall_auc']:.2f}\n- Average F1 Score: {metrics['average_f1_score']:.2f}")
+    else: # regression
         metrics['average_rmse'] = mean_squared_error(y_true, model_outputs, squared=False)
-        # print RMSE
-        print(f"Linear Regression Metrics:\n- Average RMSE: {metrics['average_rmse']:.2f}")
-    else:
-        print("Invalid model type specified.")
-        return None  # return None if an invalid model type is specified
-    
+        print(f"Regression Metrics:\n- Average RMSE: {metrics['average_rmse']:.2f}")
+
     return metrics
