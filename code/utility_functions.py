@@ -550,7 +550,7 @@ def train_with_rolling_window(df, train_size, test_size, target_col, model, ensu
 #################################################################################
 ##### Function to calculate performance metrics from trained models
 #################################################################################
-def calculate_metrics(y_true, model_outputs, threshold=0.5):
+def calculate_metrics(y_true, model_outputs, threshold=0.5, verbose=True):
     """
     Calculates and returns evaluation metrics based on the provided data, automatically determining 
     whether to treat the task as a classification or regression problem by inspecting `y_true`.
@@ -560,9 +560,10 @@ def calculate_metrics(y_true, model_outputs, threshold=0.5):
     - y_true (list or np.array): The actual target values.
     - model_outputs (list or np.array): The model's predictions or probabilities for classifiers, or direct predictions for regressors.
     - threshold (float, optional): The threshold for converting probabilities to binary labels in classification tasks. Default is 0.5.
+    - verbose (bool, optional): Controls whether to print the calculated metrics. Default is True.
 
-    For binary classification tasks, it calculates and prints Average Accuracy, Overall AUC, and Average F1 Score.
-    For regression tasks, it calculates and prints the Root Mean Squared Error (RMSE).
+    For binary classification tasks, it calculates and conditionally prints Average Accuracy, Overall AUC, and Average F1 Score based on the verbose parameter.
+    For regression tasks, it calculates and conditionally prints the Root Mean Squared Error (RMSE) based on the verbose parameter.
 
     Returns:
     - metrics (dict): A dictionary containing the calculated metrics.
@@ -570,18 +571,81 @@ def calculate_metrics(y_true, model_outputs, threshold=0.5):
     from sklearn.metrics import mean_squared_error, roc_auc_score, accuracy_score, f1_score
     import numpy as np
 
-    metrics = {} # dictionary to store calculated metrics
+    metrics = {}  # dictionary to store calculated metrics
 
     unique_values = np.unique(y_true)
-    if len(unique_values) == 2: # binary classification
+    if len(unique_values) == 2:  # binary classification
         pred_labels = [1 if p > threshold else 0 for p in model_outputs]
         metrics['pred_labels'] = pred_labels
         metrics['average_accuracy'] = accuracy_score(y_true, pred_labels)
         metrics['overall_auc'] = roc_auc_score(y_true, model_outputs)
         metrics['average_f1_score'] = f1_score(y_true, pred_labels)
-        print(f"Classification Metrics:\n- Average Accuracy: {metrics['average_accuracy']:.2f}\n- Overall AUC: {metrics['overall_auc']:.2f}\n- Average F1 Score: {metrics['average_f1_score']:.2f}")
-    else: # regression
+        if verbose:
+            print(f"Classification Metrics:\n- Average Accuracy: {metrics['average_accuracy']:.2f}\n- Overall AUC: {metrics['overall_auc']:.2f}\n- Average F1 Score: {metrics['average_f1_score']:.2f}")
+    else:  # regression
         metrics['average_rmse'] = mean_squared_error(y_true, model_outputs, squared=False)
-        print(f"Regression Metrics:\n- Average RMSE: {metrics['average_rmse']:.2f}")
+        if verbose:
+            print(f"Regression Metrics:\n- Average RMSE: {metrics['average_rmse']:.2f}")
 
     return metrics
+
+
+#################################################################################
+##### Function to calculate performance metrics from trained models
+#################################################################################
+def compile_results_to_dataframe(results, calculate_metrics_function=calculate_metrics, verbose=False):
+    """
+    Compiles the results of model runs with various hyperparameters into a pandas DataFrame.
+    
+    This function iterates through each model run's results, calculates performance metrics using 
+    a specified metrics calculation function, and combines these metrics with the hyperparameters 
+    used for the run into a single DataFrame for easy analysis and comparison.
+    
+    Parameters:
+    - results (dict): A dictionary containing the results of multiple model runs, where each key is a 
+                      run identifier and each value is another dictionary with keys 'params' (the 
+                      hyperparameters used), 'model_outputs' (the predictions made by the model), and 
+                      'y_true' (the actual target values).
+    - calculate_metrics_function (function): A function that calculates the desired metrics from 
+                                             'model_outputs' and 'y_true'. This function should return 
+                                             a dictionary where each key is the name of a metric and 
+                                             each value is the metric's value. Default is 'calculate_metrics'.
+    
+    Returns:
+    - pd.DataFrame: A DataFrame where each row corresponds to a single model run, including columns 
+                    for each hyperparameter and each calculated metric. There is also a 'run_id' column
+                    that uniquely identifies each run.
+    """
+    import pandas as pd
+    
+    data_for_df = []
+
+    # iterate through each run in the results
+    for run_id, run_data in results.items():
+        # extract parameters and results for this run
+        params = run_data['params']
+        y_true = run_data['y_true']
+        model_outputs = run_data['model_outputs']
+        
+        # calculate metrics for this run
+        metrics = calculate_metrics_function(y_true, model_outputs, verbose=verbose)
+        
+        # combine params and metrics into a single dictionary
+        combined_data = {**params, **metrics}
+        
+        # add unique identifier for the run
+        combined_data['run_id'] = run_id
+        
+        # append the combined data to our list
+        data_for_df.append(combined_data)
+
+    # create a DataFrame from the list of combined data
+    metrics_df = pd.DataFrame(data_for_df)
+
+    # reorder the DataFrame columns
+    columns_order = ['run_id'] + sorted([col for col in metrics_df.columns if col != 'run_id'])
+    metrics_df = metrics_df[columns_order]
+
+    return metrics_df
+
+
