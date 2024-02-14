@@ -60,6 +60,9 @@ def clean_team_bs_data(df, game_id_col='GAME_ID', team_abbrev_col='TEAM_ABBREVIA
 
     # keep rows in DataFrame where GAME_ID occurs twice
     cleaned_df = df[df[game_id_col].isin(game_ids_to_keep)]
+    
+    # filter the number of minutes to keep only games with 238 or more
+    cleaned_df = cleaned_df[cleaned_df['MIN'] >= 238]
 
     return cleaned_df
 
@@ -278,15 +281,15 @@ def scale_data(features, target, scaler='minmax', scale_target=False):
 #################################################################################
 ##### Function to load, filter (by time) and scale data for modeling
 #################################################################################
-def load_and_scale_data(file_path, start_date='2021-10-01', end_date='2023-07-31', scaler_type='minmax', scale_target=False):
+def load_and_scale_data(file_path, season_start_dates, season_end_dates, scaler_type='minmax', scale_target=False):
     """
-    Loads data from a specified file, filters based on a date cutoff, scales the features, 
+    Loads data from a specified file, filters based on a range of dates for each season, scales the features, 
     and returns three DataFrames each targeted to a different outcome variable.
 
     Parameters:
     - file_path (str): The file path to the CSV containing the data.
-    - start_date (str): The starting date to filter the DataFrame. Format should be 'YYYY-MM-DD'.
-    - end_date (str): The ending date to filter the DataFrame. Format should be 'YYYY-MM-DD'.
+    - season_start_dates (list): A list of starting dates for each season to filter the DataFrame. Dates should be 'YYYY-MM-DD'.
+    - season_end_dates (list): A list of ending dates for each season to filter the DataFrame. Dates should be 'YYYY-MM-DD'.
     - scaler_type (str): The type of scaler to use for feature scaling. Defaults to 'minmax'.
                          Acceptable values are 'minmax' for MinMaxScaler and 'standard' for StandardScaler.
     - scale_target (bool): Whether to scale the target variable or just the features.
@@ -297,31 +300,40 @@ def load_and_scale_data(file_path, start_date='2021-10-01', end_date='2023-07-31
     """
     import pandas as pd
     
-    # load the dataset
+    # load dataset
     df = pd.read_csv(file_path)
     
     # convert 'GAME_DATE' column to datetime
     df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
     
-    # filter data to time span of interest
-    filtered_df = df[(df['GAME_DATE'] >= start_date) & (df['GAME_DATE'] <= end_date)]
+    # initialize an empty DataFrame for concatenating filtered DataFrames
+    concatenated_df = pd.DataFrame()
     
+    # loop through each pair of start and end dates to filter and concatenate
+    for start_date, end_date in zip(season_start_dates, season_end_dates):
+        filtered_season_df = df[(df['GAME_DATE'] >= start_date) & (df['GAME_DATE'] <= end_date)]
+        concatenated_df = pd.concat([concatenated_df, filtered_season_df], ignore_index=True)
+        
+        # print the number of unique games for the current season
+        num_games = filtered_season_df['GAME_ID'].nunique()
+        print(f"Season {start_date} to {end_date} games sampled: n = {num_games}")
+        
     # feature columns
-    feature_names = [col for col in filtered_df.columns if col.startswith('ROLL_')]
-    features = filtered_df[feature_names]
+    feature_names = [col for col in concatenated_df.columns if col.startswith('ROLL_')]
+    features = concatenated_df[feature_names]
     
     # target columns
-    target_pts = filtered_df['TOTAL_PTS']
-    target_pm = filtered_df['PLUS_MINUS']
-    target_res = filtered_df['GAME_RESULT']
+    target_pts = concatenated_df['TOTAL_PTS']
+    target_pm = concatenated_df['PLUS_MINUS']
+    target_res = concatenated_df['GAME_RESULT']
     
-    # scale data
+    # scale data using a helper function 'scale_data' that you would need to define
     pts_scaled_df = scale_data(features, target_pts, scaler=scaler_type, scale_target=scale_target)
     pm_scaled_df = scale_data(features, target_pm, scaler=scaler_type, scale_target=scale_target)
     res_scaled_df = scale_data(features, target_res, scaler=scaler_type, scale_target=scale_target)
     
     # print number of unique games in data
-    print('Number of Games in Sample:', filtered_df['GAME_ID'].nunique())
+    print(f"Total number of games in sample: n = {concatenated_df['GAME_ID'].nunique()}")
     
     return pts_scaled_df, pm_scaled_df, res_scaled_df
 
