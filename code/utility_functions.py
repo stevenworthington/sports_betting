@@ -33,38 +33,42 @@ def get_missing_values(df):
 #################################################################################
 ##### Function to clean the team-level box score data from the nba_api
 #################################################################################
-def clean_team_bs_data(df, game_id_col='GAME_ID', team_abbrev_col='TEAM_ABBREVIATION'):
+def clean_team_bs_data(df, season_start_dates, season_end_dates, season_labels):
     """
-    Clean the basketball data by removing invalid game occurrences and duplicates.
+    Clean the basketball data by filtering by season dates,
+    replacing SEASON_ID with new labels, and printing the number of games per season.
     
     :param df: DataFrame containing team box score team data.
-    :param game_id_col: Name of the column containing game IDs.
-    :param team_abbrev_col: Name of the column containing team abbreviations.
+    :param season_start_dates: A list of starting dates for each season to filter the DataFrame. Dates should be 'YYYY-MM-DD'.
+    :param season_end_dates: A list of ending dates for each season to filter the DataFrame. Dates should be 'YYYY-MM-DD'.
+    :param season_labels: A list of labels for each season.
     :return: Cleaned DataFrame.
     """
-    # create unique identifier by combining GAME_ID and TEAM_ABBREVIATION
-    unique_id_col = 'UNIQUE_ID'
-    df[unique_id_col] = df[game_id_col].astype(str) + '_' + df[team_abbrev_col]
+    import pandas as pd
 
-    # drop duplicates based on the unique identifier
-    df = df.drop_duplicates(unique_id_col)
-
-    # drop the unique identifier column
-    df = df.drop(unique_id_col, axis=1)
-    
-    # count the occurrences of each GAME_ID
-    game_id_counts = df[game_id_col].value_counts()
-
-    # filter GAME_IDs that occur exactly twice
-    game_ids_to_keep = game_id_counts[game_id_counts == 2].index.tolist()
-
-    # keep rows in DataFrame where GAME_ID occurs twice
-    cleaned_df = df[df[game_id_col].isin(game_ids_to_keep)]
-    
     # filter the number of minutes to keep only games with 238 or more
-    cleaned_df = cleaned_df[cleaned_df['MIN'] >= 238]
+    df = df[df['MIN'] >= 238]
 
-    return cleaned_df
+    # convert GAME_DATE to datetime
+    df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
+    # initialize an empty DataFrame for the cleaned data
+    df_reg_seasons = pd.DataFrame()
+    
+    # map each game to its season and replace SEASON_ID
+    for i, (start_date, end_date) in enumerate(zip(season_start_dates, season_end_dates)):
+        # Select games within the current season date range
+        mask = (df['GAME_DATE'] >= start_date) & (df['GAME_DATE'] <= end_date)
+        df_season = df.loc[mask].copy()
+        if not df_season.empty:
+            df_season['SEASON_ID'] = season_labels[i]
+            df_reg_seasons = pd.concat([df_reg_seasons, df_season])
+    
+    # print the number of games in each season using the SEASON_ID labels
+    for label in sorted(set(season_labels)):
+        num_games = df_reg_seasons[df_reg_seasons['SEASON_ID'] == label]['GAME_ID'].nunique()
+        print(f"Season {label}: {num_games} games")
+
+    return df_reg_seasons
 
 
 #################################################################################
@@ -79,7 +83,7 @@ def reshape_team_bs_to_matchups(df, non_stats_cols):
     :return: Reshaped DataFrame in wide format.
     """
     import pandas as pd
-    
+        
     # filter for home games and rename columns
     home_games_df = df[df['MATCHUP'].str.contains(' vs. ')].rename(
         columns={col: f'HOME_{col}' for col in df.columns if col not in non_stats_cols}
@@ -95,7 +99,11 @@ def reshape_team_bs_to_matchups(df, non_stats_cols):
 
     # merge home and away DataFrames on 'GAME_ID'
     wide_df = pd.merge(home_games_df, away_games_df, on='GAME_ID')
-
+    
+    season_game_counts = wide_df.groupby('SEASON_ID')['GAME_ID'].nunique() 
+    for season, count in season_game_counts.items():
+        print(f"Season {season}: {count} games")
+    
     return wide_df
 
 
@@ -144,15 +152,15 @@ def calculate_rolling_stats(df, team_col, stats_cols, window_size, min_obs):
     # filter the stats columns based on the prefix
     filtered_stats_cols = [col for col in stats_cols if col.startswith(prefix)]
     
-    # sort data by team and time
-    sorted_df = df.sort_values(by=[team_col, 'GAME_DATE']).set_index('GAME_ID')
+    # ensure data is sorted by team, season, and date for accurate rolling calculation
+    sorted_df = df.sort_values(by=[team_col, 'SEASON_ID', 'GAME_DATE']).set_index('GAME_ID')
 
     # calculate rolling averages for each statistic
-    rolling_stats = (sorted_df.groupby(team_col)[filtered_stats_cols]
+    rolling_stats = (sorted_df.groupby([team_col, 'SEASON_ID'])[filtered_stats_cols]
                      .rolling(window=window_size, min_periods=min_obs)
                      .mean()
                      .round(3)
-                     .shift(1) # lag of 1 to exclude current value from average
+                     .shift(1) # lag of 1 to exclude current game from the rolling average
                      .add_prefix('ROLL_'))
 
     # reset the index for merging
@@ -166,7 +174,8 @@ def calculate_rolling_stats(df, team_col, stats_cols, window_size, min_obs):
 #################################################################################
 def process_rolling_stats(df, stats_cols, window_size, min_obs):
     """
-    Process the DataFrame to add rolling statistics for home and away teams.
+    Process the DataFrame to add rolling statistics for home and away teams, with rolling calculations
+    resetting at the start of each new season.
 
     :param df: The original DataFrame.
     :param stats_cols: List of columns for rolling statistics.
@@ -179,8 +188,8 @@ def process_rolling_stats(df, stats_cols, window_size, min_obs):
     rolling_away_stats = calculate_rolling_stats(df, 'AWAY_TEAM_NAME', stats_cols, window_size, min_obs)
 
     # merge the rolling stats into the original DataFrame
-    final_df = df.merge(rolling_home_stats.drop('HOME_TEAM_NAME', axis=1), how='left', on='GAME_ID')
-    final_df = final_df.merge(rolling_away_stats.drop('AWAY_TEAM_NAME', axis=1), how='left', on='GAME_ID')
+    final_df = df.merge(rolling_home_stats.drop('HOME_TEAM_NAME', axis=1), how='left', on=['GAME_ID', 'SEASON_ID'])
+    final_df = final_df.merge(rolling_away_stats.drop('AWAY_TEAM_NAME', axis=1), how='left', on=['GAME_ID', 'SEASON_ID'])
 
     return final_df
     
@@ -281,15 +290,14 @@ def scale_data(features, target, scaler='minmax', scale_target=False):
 #################################################################################
 ##### Function to load, filter (by time) and scale data for modeling
 #################################################################################
-def load_and_scale_data(file_path, season_start_dates, season_end_dates, scaler_type='minmax', scale_target=False):
+def load_and_scale_data(file_path, seasons_to_keep, scaler_type='minmax', scale_target=False):
     """
-    Loads data from a specified file, filters based on a range of dates for each season, scales the features, 
+    Loads data from a specified file, filters for specific seasons, scales the features, 
     and returns three DataFrames each targeted to a different outcome variable.
 
     Parameters:
     - file_path (str): The file path to the CSV containing the data.
-    - season_start_dates (list): A list of starting dates for each season to filter the DataFrame. Dates should be 'YYYY-MM-DD'.
-    - season_end_dates (list): A list of ending dates for each season to filter the DataFrame. Dates should be 'YYYY-MM-DD'.
+    - seasons_to_keep (list): A list of SEASON_IDs to include in the analysis.
     - scaler_type (str): The type of scaler to use for feature scaling. Defaults to 'minmax'.
                          Acceptable values are 'minmax' for MinMaxScaler and 'standard' for StandardScaler.
     - scale_target (bool): Whether to scale the target variable or just the features.
@@ -300,40 +308,36 @@ def load_and_scale_data(file_path, season_start_dates, season_end_dates, scaler_
     """
     import pandas as pd
     
-    # load dataset
+    # load the dataset
     df = pd.read_csv(file_path)
     
     # convert 'GAME_DATE' column to datetime
     df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
     
-    # initialize an empty DataFrame for concatenating filtered DataFrames
-    concatenated_df = pd.DataFrame()
+    # filter the DataFrame for the specified seasons
+    df_filtered = df[df['SEASON_ID'].isin(seasons_to_keep)]
     
-    # loop through each pair of start and end dates to filter and concatenate
-    for start_date, end_date in zip(season_start_dates, season_end_dates):
-        filtered_season_df = df[(df['GAME_DATE'] >= start_date) & (df['GAME_DATE'] <= end_date)]
-        concatenated_df = pd.concat([concatenated_df, filtered_season_df], ignore_index=True)
-        
-        # print the number of unique games for the current season
-        num_games = filtered_season_df['GAME_ID'].nunique()
-        print(f"Season {start_date} to {end_date} games sampled: n = {num_games}")
+    # print the number of unique games for each season in the filtered data
+    for season_id in seasons_to_keep:
+        num_games = df_filtered[df_filtered['SEASON_ID'] == season_id]['GAME_ID'].nunique()
+        print(f"Season {season_id}: {num_games} games")
         
     # feature columns
-    feature_names = [col for col in concatenated_df.columns if col.startswith('ROLL_')]
-    features = concatenated_df[feature_names]
+    feature_names = [col for col in df_filtered.columns if col.startswith('ROLL_')]
+    features = df_filtered[feature_names]
     
     # target columns
-    target_pts = concatenated_df['TOTAL_PTS']
-    target_pm = concatenated_df['PLUS_MINUS']
-    target_res = concatenated_df['GAME_RESULT']
+    target_pts = df_filtered['TOTAL_PTS']
+    target_pm = df_filtered['PLUS_MINUS']
+    target_res = df_filtered['GAME_RESULT']
     
     # scale data using a helper function 'scale_data' that you would need to define
     pts_scaled_df = scale_data(features, target_pts, scaler=scaler_type, scale_target=scale_target)
     pm_scaled_df = scale_data(features, target_pm, scaler=scaler_type, scale_target=scale_target)
     res_scaled_df = scale_data(features, target_res, scaler=scaler_type, scale_target=scale_target)
     
-    # print number of unique games in data
-    print(f"Total number of games in sample: n = {concatenated_df['GAME_ID'].nunique()}")
+    # print total number of unique games in the filtered data
+    print(f"Total number of games across sampled seasons: {df_filtered['GAME_ID'].nunique()} games")
     
     return pts_scaled_df, pm_scaled_df, res_scaled_df
 
