@@ -665,3 +665,28 @@ def compile_results_to_dataframe(results, calculate_metrics_function=calculate_m
     return metrics_df
 
 
+#################################################################################
+##### Function to get best hyperparameter settings from validation set
+#################################################################################
+def get_best_params(df, metric):
+    """
+    Extracts the best hyperparameters based on a specified performance metric.
+
+    Parameters:
+    - df (pd.DataFrame): The DataFrame containing model runs, their performance metrics, and hyperparameters.
+    - metric (str): The name of the column representing the performance metric (e.g., 'average_rmse', 'accuracy').
+                    The function will find the minimum value of this metric to determine the best parameters.
+
+    Returns:
+    - dict: A dictionary of the best hyperparameters, excluding the run ID and the metric itself.
+    """
+    # exclude 'run_id' and the specified metric from the parameters
+    params_to_exclude = ['run_id', metric]
+
+    # find the row with the best (minimum) performance metric
+    best_row = df.loc[df[metric].idxmin()]
+
+    # create the dictionary of best parameters, excluding specified columns
+    best_params = {param: best_row[param] for param in best_row.index if param not in params_to_exclude}
+
+    return best_params
