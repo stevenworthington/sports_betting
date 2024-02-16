@@ -680,8 +680,9 @@ def get_best_params(df, metric):
     Returns:
     - dict: A dictionary of the best hyperparameters, excluding the run ID and the metric itself.
     """
-    # exclude 'run_id' and the specified metric from the parameters
-    params_to_exclude = ['run_id', metric]
+    # exclude 'run_id' and any metrics from the parameters
+    params_to_exclude = ['run_id', 'average_rmse', 'average_accuracy', 
+                         'average_f1_score', 'overall_auc', 'pred_labels']
 
     # find the row with the best (minimum) performance metric
     best_row = df.loc[df[metric].idxmin()]
@@ -690,3 +691,20 @@ def get_best_params(df, metric):
     best_params = {param: best_row[param] for param in best_row.index if param not in params_to_exclude}
 
     return best_params
+
+
+#################################################################################
+##### Function to handle types that are not natively serializable in json files
+#################################################################################
+def handle_non_serializable(obj):
+    import numpy as np
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        raise TypeError("Unserializable object {} of type {}".format(obj, type(obj)))
+    
+    
