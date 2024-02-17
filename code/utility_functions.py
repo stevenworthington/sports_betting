@@ -413,6 +413,7 @@ def train_with_expanding_window(df, initial_train_size, test_size, target_col, m
     trains the specified `model` on each training split, and stores the model's predictions or probabilities.
     """
     import time
+    from xgboost import XGBClassifier, XGBRegressor
     
     start_time = time.time()
 
@@ -429,7 +430,7 @@ def train_with_expanding_window(df, initial_train_size, test_size, target_col, m
         y_train = df.iloc[train_indices][target_col]
         X_test = df.iloc[test_indices].drop(columns=target_col)
         y_test = df.iloc[test_indices][target_col]
-            
+        
         # train the model
         model.fit(X_train, y_train)
         
@@ -684,8 +685,14 @@ def get_best_params(df, metric):
     params_to_exclude = ['run_id', 'average_rmse', 'average_accuracy', 
                          'average_f1_score', 'overall_auc', 'pred_labels']
 
-    # find the row with the best (minimum) performance metric
-    best_row = df.loc[df[metric].idxmin()]
+    # determine whether to find the min or max value based on the metric
+    if metric == 'average_rmse':
+        best_row_idx = df[metric].idxmin()
+    elif metric in ['average_accuracy', 'overall_auc', 'average_f1_score']:
+        best_row_idx = df[metric].idxmax()
+
+    # find the row with the optimal performance metric
+    best_row = df.loc[best_row_idx]
 
     # create the dictionary of best parameters, excluding specified columns
     best_params = {param: best_row[param] for param in best_row.index if param not in params_to_exclude}

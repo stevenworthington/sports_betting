@@ -1,0 +1,6 @@
+{
+    "alpha": 0.1,
+    "booster": "gbtree",
+    "learning_rate": 1.0,
+    "max_depth": 4
+}
