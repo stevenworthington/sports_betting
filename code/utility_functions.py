@@ -135,15 +135,16 @@ def create_target_variables(df, home_wl_col, home_pts_col, away_pts_col):
 #################################################################################
 ##### Function to calculate rolling average statistics
 #################################################################################
-def calculate_rolling_stats(df, team_col, stats_cols, window_size, min_obs):
+def calculate_rolling_stats(df, team_col, stats_cols, window_size, min_obs, stratify_by_season=True):
     """
-    Calculate rolling statistics for a given team.
+    Calculate rolling statistics for a given team, optionally stratifying by season.
 
     :param df: DataFrame containing the team data
     :param team_col: Column name of the team in the DataFrame
     :param stats_cols: List of columns to include in rolling statistics
     :param window_size: Size of the rolling window
     :param min_obs: Minimum number of observations to calculate rolling stats
+    :param stratify_by_season: If True, calculate rolling stats separately for each season. If False, calculate rolling stats across seasons.
     :return: DataFrame with rolling statistics
     """
     # determine whether to use 'HOME' or 'AWAY' stats
@@ -152,11 +153,15 @@ def calculate_rolling_stats(df, team_col, stats_cols, window_size, min_obs):
     # filter the stats columns based on the prefix
     filtered_stats_cols = [col for col in stats_cols if col.startswith(prefix)]
     
-    # ensure data is sorted by team, season, and date for accurate rolling calculation
-    sorted_df = df.sort_values(by=[team_col, 'SEASON_ID', 'GAME_DATE']).set_index('GAME_ID')
+    # ensure data is sorted by team, season (if stratified), and date for accurate rolling calculation
+    sort_cols = [team_col, 'GAME_DATE'] if not stratify_by_season else [team_col, 'SEASON_ID', 'GAME_DATE']
+    sorted_df = df.sort_values(by=sort_cols).set_index('GAME_ID')
+
+    # group by team_col, and additionally by 'SEASON_ID' if stratifying by season
+    group_cols = [team_col] if not stratify_by_season else [team_col, 'SEASON_ID']
 
     # calculate rolling averages for each statistic
-    rolling_stats = (sorted_df.groupby([team_col, 'SEASON_ID'])[filtered_stats_cols]
+    rolling_stats = (sorted_df.groupby(group_cols)[filtered_stats_cols]
                      .rolling(window=window_size, min_periods=min_obs)
                      .mean()
                      .round(3)
@@ -172,26 +177,34 @@ def calculate_rolling_stats(df, team_col, stats_cols, window_size, min_obs):
 #################################################################################
 ##### Function to calculate rolling average statistics and add to a DataFrame
 #################################################################################
-def process_rolling_stats(df, stats_cols, window_size, min_obs):
+def process_rolling_stats(df, stats_cols, window_size, min_obs, stratify_by_season=True):
     """
-    Process the DataFrame to add rolling statistics for home and away teams, with rolling calculations
-    resetting at the start of each new season.
+    Process the DataFrame to add rolling statistics for home and away teams. Optionally allows for rolling calculations
+    to reset at the start of each new season or be contiguous across seasons.
 
     :param df: The original DataFrame.
     :param stats_cols: List of columns for rolling statistics.
     :param window_size: The size of the rolling window.
     :param min_obs: Minimum number of observations for rolling calculation.
+    :param stratify_by_season: If True, calculate rolling stats separately for each season. If False, calculate rolling stats across seasons.
     :return: DataFrame with added rolling statistics.
     """
-    # calculate rolling stats for home and away teams
-    rolling_home_stats = calculate_rolling_stats(df, 'HOME_TEAM_NAME', stats_cols, window_size, min_obs)
-    rolling_away_stats = calculate_rolling_stats(df, 'AWAY_TEAM_NAME', stats_cols, window_size, min_obs)
+    # calculate rolling stats for home and away teams with optional season stratification
+    rolling_home_stats = calculate_rolling_stats(df, 'HOME_TEAM_NAME', stats_cols, window_size, min_obs, stratify_by_season)
+    rolling_away_stats = calculate_rolling_stats(df, 'AWAY_TEAM_NAME', stats_cols, window_size, min_obs, stratify_by_season)
 
-    # merge the rolling stats into the original DataFrame
-    final_df = df.merge(rolling_home_stats.drop('HOME_TEAM_NAME', axis=1), how='left', on=['GAME_ID', 'SEASON_ID'])
-    final_df = final_df.merge(rolling_away_stats.drop('AWAY_TEAM_NAME', axis=1), how='left', on=['GAME_ID', 'SEASON_ID'])
+    # conditionally merge the rolling stats into the original DataFrame based on stratification choice
+    if stratify_by_season:
+        # if stratifying by season, include 'SEASON_ID' in the merge keys
+        final_df = df.merge(rolling_home_stats.drop('HOME_TEAM_NAME', axis=1), how='left', on=['GAME_ID', 'SEASON_ID'])
+        final_df = final_df.merge(rolling_away_stats.drop('AWAY_TEAM_NAME', axis=1), how='left', on=['GAME_ID', 'SEASON_ID'])
+    else:
+        # if not stratifying by season, do not include 'SEASON_ID' in the merge keys
+        final_df = df.merge(rolling_home_stats.drop(['HOME_TEAM_NAME', 'SEASON_ID'], axis=1, errors='ignore'), how='left', on='GAME_ID')
+        final_df = final_df.merge(rolling_away_stats.drop(['AWAY_TEAM_NAME', 'SEASON_ID'], axis=1, errors='ignore'), how='left', on='GAME_ID')
 
     return final_df
+
     
 
 #################################################################################
