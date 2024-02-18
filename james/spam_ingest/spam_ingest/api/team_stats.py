@@ -12,6 +12,7 @@ import pandas as pd
 
 from datetime import datetime, timedelta
 import time
+from functools import wraps
 
 
 month_map = {
@@ -29,6 +30,7 @@ def get_advanced_team_stats_by_month(month: str):
     return get_advanced_team_stats(month=month_map[month])
 
 
+@wraps(leaguedashteamstats.LeagueDashTeamStats)
 def get_advanced_team_stats(**kwargs):
     return leaguedashteamstats.LeagueDashTeamStats(**kwargs).get_data_frames()[0]
 
