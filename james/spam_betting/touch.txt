@@ -1,0 +1,7 @@
+spam_betting/
+  backtest/
+  online_betting/
+  bankroll/
+
+
+depend on [use, consume]: spam_ml, maybe spam_data

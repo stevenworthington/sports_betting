@@ -1,0 +1,7 @@
+spam_ml/
+  train/
+  inference/
+  validations/
+  tuning/
+
+uses spam_data
