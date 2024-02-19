@@ -172,7 +172,7 @@ def parlay_demon(start_date, end_date, units, amount):
         
     odds = spread_df[(spread_df.bookie=='betmgm')]
     odds = pd.merge(games, odds, left_on='game_id', right_on='game_id')
-    parlays = odds.groupby('game_id').apply(pick_parlays).values
+    parlays = odds.groupby('date').apply(pick_parlays).values
     
     wager_history = {
         'bankroll': 1000,
@@ -215,7 +215,7 @@ def parlay_god(start_date, end_date, units, amount):
 
     odds = spread_df[(spread_df.bookie=='betmgm')]
     odds = pd.merge(games, odds, left_on='game_id', right_on='game_id')
-    parlays = odds.groupby('game_id').apply(pick_parlays).values
+    parlays = odds.groupby('date').apply(pick_parlays).values
     
     wager_history = {
         'bankroll': 1000,

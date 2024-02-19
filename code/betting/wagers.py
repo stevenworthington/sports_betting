@@ -9,7 +9,7 @@ ODDS_DATA = f'{REPO_ROOT}/data/prop_odds_api'
 GAME_DATA = f'{REPO_ROOT}/data/original'
 
 games_df = pd.read_csv(f'{ODDS_DATA}/prop_odds_games.csv')
-odds_df = pd.read_csv(f'{GAME_DATA}/nba_games_box_scores_2015_2024.csv', usecols=['TEAM_NAME', 'GAME_DATE', 'PTS'])
+odds_df = pd.read_csv(f'{GAME_DATA}/nba_games_box_scores_2022_2024.csv', usecols=['TEAM_NAME', 'GAME_DATE', 'PTS'])
 
 def get_other_team(date, team_name):
     temp = games_df[
