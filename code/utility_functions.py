@@ -135,18 +135,25 @@ def create_target_variables(df, home_wl_col, home_pts_col, away_pts_col):
 #################################################################################
 ##### Function to calculate rolling average statistics
 #################################################################################
-def calculate_rolling_stats(df, team_col, stats_cols, window_size, min_obs, stratify_by_season=True):
+def calculate_rolling_stats(df, team_col, stats_cols, window_size, min_obs, stratify_by_season=True, exclude_initial_games=0):
     """
-    Calculate rolling statistics for a given team, optionally stratifying by season.
+    Calculate rolling statistics for a given team, optionally stratifying by season, and excluding the initial games
+    from the rolling average calculations.
 
-    :param df: DataFrame containing the team data
-    :param team_col: Column name of the team in the DataFrame
-    :param stats_cols: List of columns to include in rolling statistics
-    :param window_size: Size of the rolling window
-    :param min_obs: Minimum number of observations to calculate rolling stats
-    :param stratify_by_season: If True, calculate rolling stats separately for each season. If False, calculate rolling stats across seasons.
-    :return: DataFrame with rolling statistics
+    Parameters:
+    - df (pd.DataFrame): DataFrame containing the team data.
+    - team_col (str): Column name identifying the team within the DataFrame.
+    - stats_cols (list): List of statistic columns to calculate rolling averages for.
+    - window_size (int): Number of games over which to calculate the rolling average.
+    - min_obs (int): Minimum number of observations required to calculate the rolling average.
+    - stratify_by_season (bool): Whether to reset rolling calculations at the start of each season.
+    - exclude_initial_games (int): Number of initial games in each season to exclude from the rolling calculations.
+
+    Returns:
+    - pd.DataFrame: DataFrame with rolling statistics, excluding initial games as specified.
     """
+    import pandas as pd
+    
     # determine whether to use 'HOME' or 'AWAY' stats
     prefix = 'HOME_' if 'HOME' in team_col else 'AWAY_'
 
@@ -154,44 +161,68 @@ def calculate_rolling_stats(df, team_col, stats_cols, window_size, min_obs, stra
     filtered_stats_cols = [col for col in stats_cols if col.startswith(prefix)]
     
     # ensure data is sorted by team, season (if stratified), and date for accurate rolling calculation
-    sort_cols = [team_col, 'GAME_DATE'] if not stratify_by_season else [team_col, 'SEASON_ID', 'GAME_DATE']
-    sorted_df = df.sort_values(by=sort_cols).set_index('GAME_ID')
+    # and set GAME_ID as the index to preserve it through the rolling operation
+    sort_cols = [team_col, 'SEASON_ID', 'GAME_DATE'] if stratify_by_season else [team_col, 'GAME_DATE']
+    df_sorted = df.sort_values(by=sort_cols).set_index('GAME_ID')
 
-    # group by team_col, and additionally by 'SEASON_ID' if stratifying by season
-    group_cols = [team_col] if not stratify_by_season else [team_col, 'SEASON_ID']
-
-    # calculate rolling averages for each statistic
-    rolling_stats = (sorted_df.groupby(group_cols)[filtered_stats_cols]
-                     .rolling(window=window_size, min_periods=min_obs)
-                     .mean()
-                     .round(3)
-                     .shift(1) # lag of 1 to exclude current game from the rolling average
-                     .add_prefix('ROLL_'))
-
-    # reset the index for merging
-    rolling_stats.reset_index(inplace=True)
+    # apply grouping for rolling calculation
+    group_cols = [team_col, 'SEASON_ID'] if stratify_by_season else [team_col]
     
+    # perform the rolling operation, preserving GAME_ID in the index
+    rolling_stats = (df_sorted.groupby(group_cols)[filtered_stats_cols]
+                              .rolling(window=window_size, min_periods=min_obs)
+                              .mean()
+                              .round(3)
+                              .shift(1)  # lag to exclude the current game from the rolling average
+                              .add_prefix('ROLL_')
+                              .reset_index() # reset the index to convert GAME_ID back into a column
+                     )
+
+    # exclude initial games if specified
+    if exclude_initial_games > 0:
+        
+        # reset the index of df_sorted to make GAME_ID a column
+        df_sorted = df_sorted.reset_index()
+    
+        # directly create a game_counter column in df_sorted
+        df_sorted['game_counter'] = df_sorted.groupby(group_cols).cumcount() + 1
+
+        # merge game_counter with rolling_stats on GAME_ID
+        # ensure rolling_stats has GAME_ID as a column, which should be the case if it's been reset_index() after rolling
+        rolling_stats = rolling_stats.merge(df_sorted[['GAME_ID', 'game_counter']], on='GAME_ID', how='left')
+    
+        # apply the filtering based on exclude_initial_games
+        rolling_stats = rolling_stats[rolling_stats['game_counter'] > exclude_initial_games]
+    
+        # drop the 'game_counter' column after filtering
+        rolling_stats.drop(columns=['game_counter'], inplace=True)
+
     return rolling_stats
 
-
+    
 #################################################################################
 ##### Function to calculate rolling average statistics and add to a DataFrame
 #################################################################################
-def process_rolling_stats(df, stats_cols, window_size, min_obs, stratify_by_season=True):
+def process_rolling_stats(df, stats_cols, window_size, min_obs, stratify_by_season=True, exclude_initial_games=0):
     """
-    Process the DataFrame to add rolling statistics for home and away teams. Optionally allows for rolling calculations
-    to reset at the start of each new season or be contiguous across seasons.
+    Process the DataFrame to add rolling statistics for home and away teams, with an option to exclude 
+    the initial games from the rolling calculation. Optionally allows for rolling calculations to reset 
+    at the start of each new season or be contiguous across seasons.
 
-    :param df: The original DataFrame.
-    :param stats_cols: List of columns for rolling statistics.
-    :param window_size: The size of the rolling window.
-    :param min_obs: Minimum number of observations for rolling calculation.
-    :param stratify_by_season: If True, calculate rolling stats separately for each season. If False, calculate rolling stats across seasons.
-    :return: DataFrame with added rolling statistics.
+    Parameters:
+    - df: The original DataFrame.
+    - stats_cols: List of columns for rolling statistics.
+    - window_size: The size of the rolling window.
+    - min_obs: Minimum number of observations for rolling calculation.
+    - stratify_by_season: If True, calculate rolling stats separately for each season. If False, calculate rolling stats across seasons.
+    - exclude_initial_games: Number of initial games to exclude from the rolling calculations.
+    
+    Returns:
+    - DataFrame with added rolling statistics.
     """
-    # calculate rolling stats for home and away teams with optional season stratification
-    rolling_home_stats = calculate_rolling_stats(df, 'HOME_TEAM_NAME', stats_cols, window_size, min_obs, stratify_by_season)
-    rolling_away_stats = calculate_rolling_stats(df, 'AWAY_TEAM_NAME', stats_cols, window_size, min_obs, stratify_by_season)
+    # calculate rolling stats for home and away teams with optional season stratification and exclusion of initial games
+    rolling_home_stats = calculate_rolling_stats(df, 'HOME_TEAM_NAME', stats_cols, window_size, min_obs, stratify_by_season, exclude_initial_games)
+    rolling_away_stats = calculate_rolling_stats(df, 'AWAY_TEAM_NAME', stats_cols, window_size, min_obs, stratify_by_season, exclude_initial_games)
 
     # conditionally merge the rolling stats into the original DataFrame based on stratification choice
     if stratify_by_season:
@@ -204,9 +235,8 @@ def process_rolling_stats(df, stats_cols, window_size, min_obs, stratify_by_seas
         final_df = final_df.merge(rolling_away_stats.drop(['AWAY_TEAM_NAME', 'SEASON_ID'], axis=1, errors='ignore'), how='left', on='GAME_ID')
 
     return final_df
-
     
-
+    
 #################################################################################
 ##### Function to plot targets against rolling average statistics over time
 #################################################################################
@@ -248,110 +278,102 @@ def plot_team_bs_stats(df, team_col, feature_prefix, n_rows=3, n_cols=3):
 #################################################################################
 ##### Function to scale data for modeling
 #################################################################################
-def scale_data(features, target, scaler='minmax', scale_target=False):
+def scale_features_targets(features_df, target_series=None, scaler_obj=None, scale_target=False):
     """
-    Scale the features (and optionally the target) of a dataset.
-    
+    Apply scaling to features and optionally to the target variable using a pre-fitted scaler.
+
+    This function assumes that a scaler object (e.g., MinMaxScaler or StandardScaler) has been
+    previously fitted and is passed to it for transforming the features and, optionally, the target.
+
     Parameters:
-    - features: DataFrame containing the features to scale.
-    - target: Series or DataFrame containing the target variable.
-    - scaler: String, either 'minmax' for MinMaxScaler or 'standard' for StandardScaler.
-    - scale_target: Boolean, whether to scale the target variable or not.
+    - features_df (pd.DataFrame): DataFrame containing the features to be scaled.
+    - target_series (pd.Series, optional): Series containing the target variable to be scaled. Required if `scale_target` is True.
+    - scaler_obj (scaler object): A pre-fitted scaler object (e.g., instance of MinMaxScaler or StandardScaler).
+    - scale_target (bool): Flag indicating whether the target variable should also be scaled.
 
     Returns:
-    - DataFrame with scaled features (and target if scale_target is True), with index reset.
+    - scaled_features (pd.DataFrame): DataFrame containing the scaled features.
+    - scaled_target (pd.Series, optional): Series containing the scaled target variable, if `scale_target` is True and `target_series` is provided.
     """
-    import numpy as np
+    import pandas as pd
+
+    # scale features
+    scaled_features = pd.DataFrame(scaler_obj.transform(features_df), columns=features_df.columns, index=features_df.index)
+    
+    if scale_target and target_series is not None:
+        # assuming the scaler_obj is already fitted in the load_and_scale_data() function
+        scaled_target = scaler_obj.transform(target_series.values.reshape(-1, 1))
+        scaled_target = pd.Series(scaled_target.flatten(), index=target_series.index, name=target_series.name)
+        return scaled_features, scaled_target
+    
+    return scaled_features, target_series
+
+
+#################################################################################
+##### Function to load, filter (by time), and scale data for modeling
+#################################################################################
+def load_and_scale_data(file_path, seasons_to_keep, scaler_type='minmax', scale_target=False):
+    """
+    Loads data from a specified file, filters for specific seasons, scales the features (and optionally the target),
+    using only the training data for scaler fitting, and applies this scaling across specified seasons.
+    
+    Parameters:
+    - file_path (str): The file path to the CSV containing the data.
+    - seasons_to_keep (list): A list of SEASON_IDs to include in the analysis. The first ID is used for training.
+    - scaler_type (str): The type of scaler to use for feature scaling ('minmax' or 'standard').
+    - scale_target (bool): Whether to scale the target variable(s) alongside the features.
+    
+    Returns:
+    - Tuple of pd.DataFrame: Scaled DataFrames for features (and targets if `scale_target` is True) for each target variable.
+      Specifically returns DataFrames for TOTAL_PTS, PLUS_MINUS, and GAME_RESULT targets.
+    """
     import pandas as pd
     from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
-    # initialize the scaler based on the input
-    if scaler == 'minmax':
+    # load the dataset
+    df = pd.read_csv(file_path)
+    df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
+
+    # filter the DataFrame for the specified seasons
+    df_filtered = df[df['SEASON_ID'].isin(seasons_to_keep)]
+
+    # initialize the scaler
+    if scaler_type == 'minmax':
         scaler = MinMaxScaler()
-    elif scaler == 'standard':
+    elif scaler_type == 'standard':
         scaler = StandardScaler()
     else:
         raise ValueError("scaler must be either 'minmax' or 'standard'")
     
-    # scale features
-    scaled_features = scaler.fit_transform(features)
-    
-    # prepare column names for the resulting DataFrame
-    col_names = features.columns.tolist()
-    
-    if scale_target:
-        # scale target if required using the same scaler initialized above
-        scaled_target = scaler.fit_transform(target.values.reshape(-1, 1))
-        # combine scaled features and target
-        scaled_data = np.concatenate([scaled_features, scaled_target], axis=1)
-        # add the target column name
-        col_names.append(target.name)
-    else:
-        # combine scaled features with unscaled target by ensuring target is properly shaped
-        target_array = target.values.reshape(-1, 1) if len(target.shape) == 1 else target
-        scaled_data = np.concatenate([scaled_features, target_array], axis=1)
-        # add the target column name
-        col_names.append(target.name)
-        
-    # convert scaled data back to DataFrame, assign column names, and reset index
-    scaled_data_df = pd.DataFrame(scaled_data, columns=col_names)
-    scaled_data_df = scaled_data_df.reset_index(drop=True)
-    
-    return scaled_data_df
-
-
-#################################################################################
-##### Function to load, filter (by time) and scale data for modeling
-#################################################################################
-def load_and_scale_data(file_path, seasons_to_keep, scaler_type='minmax', scale_target=False):
-    """
-    Loads data from a specified file, filters for specific seasons, scales the features, 
-    and returns three DataFrames each targeted to a different outcome variable.
-
-    Parameters:
-    - file_path (str): The file path to the CSV containing the data.
-    - seasons_to_keep (list): A list of SEASON_IDs to include in the analysis.
-    - scaler_type (str): The type of scaler to use for feature scaling. Defaults to 'minmax'.
-                         Acceptable values are 'minmax' for MinMaxScaler and 'standard' for StandardScaler.
-    - scale_target (bool): Whether to scale the target variable or just the features.
-    
-    Returns:
-    - Tuple of DataFrames: (pts_scaled_df, pm_scaled_df, res_scaled_df) where each DataFrame 
-      corresponds to scaled features with one of the targets being TOTAL_PTS, PLUS_MINUS, and GAME_RESULT.
-    """
-    import pandas as pd
-    
-    # load the dataset
-    df = pd.read_csv(file_path)
-    
-    # convert 'GAME_DATE' column to datetime
-    df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
-    
-    # filter the DataFrame for the specified seasons
-    df_filtered = df[df['SEASON_ID'].isin(seasons_to_keep)]
-    
-    # print the number of unique games for each season in the filtered data
-    for season_id in seasons_to_keep:
-        num_games = df_filtered[df_filtered['SEASON_ID'] == season_id]['GAME_ID'].nunique()
-        print(f"Season {season_id}: {num_games} games")
-        
-    # feature columns
+    # fit the scaler on features from the training season only
+    training_season = seasons_to_keep[0] # assume training season is first season
     feature_names = [col for col in df_filtered.columns if col.startswith('ROLL_')]
-    features = df_filtered[feature_names]
-    
-    # target columns
-    target_pts = df_filtered['TOTAL_PTS']
-    target_pm = df_filtered['PLUS_MINUS']
-    target_res = df_filtered['GAME_RESULT']
-    
-    # scale data using a helper function 'scale_data' that you would need to define
-    pts_scaled_df = scale_data(features, target_pts, scaler=scaler_type, scale_target=scale_target)
-    pm_scaled_df = scale_data(features, target_pm, scaler=scaler_type, scale_target=scale_target)
-    res_scaled_df = scale_data(features, target_res, scaler=scaler_type, scale_target=scale_target)
-    
-    # print total number of unique games in the filtered data
-    print(f"Total number of games across sampled seasons: {df_filtered['GAME_ID'].nunique()} games")
-    
+    training_features = df_filtered[df_filtered['SEASON_ID'] == training_season][feature_names]
+    scaler.fit(training_features)
+
+    # prepare to store scaled data for each target
+    pts_scaled_df, pm_scaled_df, res_scaled_df = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    # apply scaling to features (and optionally targets) for all specified target columns
+    for target_col in ['TOTAL_PTS', 'PLUS_MINUS', 'GAME_RESULT']:
+        if target_col in df_filtered:
+            target = df_filtered[target_col] if scale_target else None
+            features_scaled, target_scaled = scale_features_targets(df_filtered[feature_names],
+                                                                    target, 
+                                                                    scaler_obj=scaler, scale_target=scale_target)
+            
+            # add the target back to features_scaled DataFrame if scale_target is True
+            if scale_target and target_scaled is not None:
+                features_scaled[target_col] = target_scaled
+            
+            # assign to the respective DataFrame based on target_col
+            if target_col == 'TOTAL_PTS':
+                pts_scaled_df = features_scaled
+            elif target_col == 'PLUS_MINUS':
+                pm_scaled_df = features_scaled
+            elif target_col == 'GAME_RESULT':
+                res_scaled_df = features_scaled
+
     return pts_scaled_df, pm_scaled_df, res_scaled_df
 
         
