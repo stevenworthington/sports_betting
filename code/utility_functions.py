@@ -56,7 +56,7 @@ def clean_team_bs_data(df, season_start_dates, season_end_dates, season_labels):
     
     # map each game to its season and replace SEASON_ID
     for i, (start_date, end_date) in enumerate(zip(season_start_dates, season_end_dates)):
-        # Select games within the current season date range
+        # select games within the current season date range
         mask = (df['GAME_DATE'] >= start_date) & (df['GAME_DATE'] <= end_date)
         df_season = df.loc[mask].copy()
         if not df_season.empty:
