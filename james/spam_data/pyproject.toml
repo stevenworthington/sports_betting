@@ -1,7 +1,7 @@
 [project]
-name = "spam_ingest"
+name = "spam_data"
 version = "0.1.0"
-description = "Default template for PDM package"
+description = "SPAM Capstone Data Library"
 authors = [
     {name = "James Milliman", email = "jaimsmilliman@gmail.com"},
 ]
