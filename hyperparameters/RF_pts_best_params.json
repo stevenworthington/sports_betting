@@ -1,7 +1,7 @@
 {
     "max_depth": 20,
     "max_features": 0.3,
-    "min_impurity_decrease": 0.3,
-    "min_samples_leaf": 1,
-    "min_samples_split": 4
+    "min_impurity_decrease": 0.1,
+    "min_samples_leaf": 2,
+    "min_samples_split": 2
 }

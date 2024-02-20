@@ -476,6 +476,64 @@ def train_with_expanding_window(df, initial_train_size, test_size, target_col, m
 
 
 #################################################################################
+##### Function to train models on a hyperparamter grid with expanding window
+#################################################################################
+def train_models_over_grid(df, target_col, initial_train_size, expansion_limit, test_size, 
+                           model_class, constant_params, explore_params):
+    """
+    Trains models over a grid of hyperparameters.
+
+    Parameters:
+    - df (pd.DataFrame): The dataset to use for training.
+    - target_col (str): The name of the target column.
+    - initial_train_size (int): Starting size of the training set.
+    - expansion_limit (int): Maximum number of new training observations in expansion.
+    - test_size (int): Size of the test dataset for each split (LOO cross-validation).
+    - model_class: The class of the model to instantiate.
+    - constant_params (dict): Constant parameters for the model.
+    - explore_params (dict): Parameters to explore with grid search.
+
+    Returns:
+    - dict: A dictionary containing the results for each run.
+    """
+    import itertools
+    import time
+
+    results = {}
+    keys, values = zip(*explore_params.items())
+    param_combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
+
+    start_time = time.time()
+
+    for i, explore_param in enumerate(param_combinations):
+        print('Parameters currently explored:', explore_param)
+        
+        # instantiate the model with combined parameters
+        model = model_class(**constant_params, **explore_param)
+
+        # train over expanding window
+        model_outputs, y_true = train_with_expanding_window(
+            df=df,
+            initial_train_size=initial_train_size,
+            expansion_limit=expansion_limit,
+            test_size=test_size,
+            target_col=target_col,
+            model=model
+        )
+        
+        # store outputs and true values in the results dictionary
+        results[f"run_{i}"] = {
+            "params": {**explore_param},
+            "model_outputs": model_outputs,
+            "y_true": y_true
+        }
+
+    end_time = time.time()
+    print(f"Total time taken: {end_time - start_time:.2f} seconds")
+    return results
+
+
+#################################################################################
 ##### Function to create a rolling window time series split
 #################################################################################
 def rolling_window_ts_split(df, train_size, test_size, ensure_diversity=False, target_col=None, advancement_limit=None):
@@ -734,4 +792,138 @@ def handle_non_serializable(obj):
     else:
         raise TypeError("Unserializable object {} of type {}".format(obj, type(obj)))
     
+
+#################################################################################
+##### Function to plot model performance for continuous outcomes with expanding window
+#################################################################################
+def plot_model_performance(title, y_label, metric_key, metrics, df, model_outputs, target_col, 
+                           initial_train_size, expansion_limit=None, test_size=1):
+    """
+    Plots the observed vs. predicted values and includes a performance metric on the plot.
+
+    Parameters:
+    - title (str): The title for the plot.
+    - y_label (str): The label for the y-axis.
+    - metric_key (str): The key in the metrics dictionary for the performance metric to display.
+    - metrics (dict): The dictionary containing performance metrics.
+    - df (pd.DataFrame): The DataFrame containing the observed data.
+    - model_outputs (list or np.array): The model's predictions.
+    - target_col (str): The name of the target column in `df`.
+    - initial_train_size (int): The initial size of the training dataset.
+    - expansion_limit (int or None): The maximum number of times the training set is expanded.
+    - test_size (int): The size of the test dataset for each split.
+    """
+    import matplotlib.pyplot as plt
     
+    # set end_index based on whether an expansion_limit is specified
+    if expansion_limit is not None:
+        end_index = initial_train_size + expansion_limit * test_size
+    else:
+        # use the length of model_outputs to determine end_index when no limit is specified
+        end_index = initial_train_size + len(model_outputs) * test_size
+
+    # adjust the observed_values slice accordingly
+    observed_values = df[target_col][initial_train_size:end_index]
+    
+    # ensure lengths are the same (for sanity check)
+    assert len(model_outputs) == len(observed_values), "Length mismatch between predictions and observed values."
+
+    # plot
+    plt.figure(figsize=(12, 4))
+    plt.plot(observed_values.index, observed_values, label='Observed', color='blue', alpha=0.5)
+    plt.plot(observed_values.index, model_outputs, label='Predicted', color='red', alpha=0.5)
+    plt.title(title)
+    plt.xlabel(r'$n^{th}$ Game')
+    plt.ylabel(y_label)
+    # Extract and display the specified performance metric on the plot
+    plt.text(x=0.72, y=0.92, s=f"{metric_key.replace('_', ' ').title()}: {metrics[metric_key]:.2f}", 
+             transform=plt.gca().transAxes, ha='left', va='top', 
+             bbox=dict(facecolor='white', alpha=0.5))
+    plt.legend()
+    plt.show()
+    
+
+#################################################################################
+##### Function to plot model performance for continuous outcomes with rolling window
+#################################################################################
+def plot_model_performance_rolling(title, y_label, metric_key, metrics, df, model_outputs, target_col,
+                                   train_size, advancement_limit=None, test_size=1):
+    """
+    Plots observed vs. predicted values for a model using a rolling window approach and includes a performance metric.
+
+    Parameters:
+    - title (str): Title for the plot.
+    - y_label (str): Label for the y-axis.
+    - metric_key (str): Key for the performance metric to display from the metrics dictionary.
+    - metrics (dict): Dictionary containing performance metrics.
+    - df (pd.DataFrame): DataFrame containing the observed data.
+    - model_outputs (list or np.array): Model's predictions.
+    - target_col (str): Name of the target column in `df`.
+    - train_size (int): Initial size of the training dataset.
+    - advancement_limit (int or None): Maximum number of times the training set is expanded. If None, calculates based on the length of model_outputs.
+    - test_size (int): Size of the test dataset for each split.
+    """
+    import matplotlib.pyplot as plt
+    
+    if advancement_limit is not None:
+        end_index = train_size + advancement_limit * test_size
+    else:
+        end_index = train_size + len(model_outputs) * test_size
+
+    observed_values = df[target_col][train_size:end_index]
+
+    assert len(model_outputs) == len(observed_values), "Length mismatch between predictions and observed values."
+
+    plt.figure(figsize=(12, 4))
+    plt.plot(observed_values.index, observed_values, label='Observed', color='blue', alpha=0.5)
+    plt.plot(observed_values.index, model_outputs, label='Predicted', color='red', alpha=0.5)
+    plt.title(title)
+    plt.xlabel(r'$n^{th}$ Game')
+    plt.ylabel(y_label)
+    metric_value = metrics.get(metric_key, "Metric not found")
+    plt.text(x=0.72, y=0.92, s=f"{metric_key.replace('_', ' ').title()}: {metric_value:.2f}", 
+             transform=plt.gca().transAxes, ha='left', va='top', 
+             bbox=dict(facecolor='white', alpha=0.5))
+    plt.legend()
+    plt.show()
+    
+
+#################################################################################
+##### Function to plot classification performance
+#################################################################################
+def plot_classification_performance(y_true, model_outputs, pred_labels, cm_title='Confusion Matrix', roc_title='ROC Curve'):
+    """
+    Plots the confusion matrix and ROC curve for classification model results side by side.
+
+    Parameters:
+    - y_true (array-like): True labels.
+    - model_outputs (array-like): Model probability outputs for the positive class.
+    - pred_labels (array-like): Predicted labels.
+    - cm_title (str): Title for the confusion matrix plot.
+    - roc_title (str): Title for the ROC curve plot.
+    """
+    import matplotlib.pyplot as plt
+    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, roc_curve, auc
+    
+    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(8, 4))
+    
+    # plot Confusion Matrix
+    cm = confusion_matrix(y_true, pred_labels)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[0, 1])
+    disp.plot(cmap='Blues', ax=axes[0])
+    axes[0].set_title(cm_title)
+    
+    # plot ROC Curve
+    fpr, tpr, thresholds = roc_curve(y_true, model_outputs)
+    roc_auc = auc(fpr, tpr)
+    axes[1].plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+    axes[1].plot([0, 1], [0, 1], color='navy', lw=1.5, linestyle='--')
+    axes[1].set_xlim([0.0, 1.0])
+    axes[1].set_ylim([0.0, 1.05])
+    axes[1].set_xlabel('False Positive Rate')
+    axes[1].set_ylabel('True Positive Rate')
+    axes[1].set_title(roc_title)
+    axes[1].legend(loc="lower right")
+    
+    plt.tight_layout()
+    plt.show()
