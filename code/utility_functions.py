@@ -230,7 +230,10 @@ def process_rolling_stats(df, stats_cols, target_cols, window_size, min_obs,
     # merge the rolling stats into the subset DataFrame using GAME_ID as the merge key
     final_df = df_subset.merge(rolling_home_stats, how='left', on='GAME_ID')
     final_df = final_df.merge(rolling_away_stats.drop(['SEASON_ID', 'GAME_DATE'], axis=1), how='left', on='GAME_ID')
-
+    
+    # sort the final DataFrame by GAME_DATE from oldest to newest
+    final_df = final_df.sort_values(by='GAME_DATE')
+    
     return final_df
 
     
@@ -298,7 +301,7 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season,
     # load the dataset
     df = pd.read_csv(file_path)
     df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
-
+    
     # filter the DataFrame for the specified seasons
     df_filtered = df[df['SEASON_ID'].isin(seasons_to_keep)]
     
@@ -322,6 +325,9 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season,
 
     # drop rows with missing values from df_filtered
     df_filtered = df_filtered.dropna(subset=feature_names)
+    
+    # set GAME_DATE as the index
+    df_filtered.set_index('GAME_DATE', inplace=True)
     
     # fit the scaler on features from the training season only
     training_features = df_filtered[df_filtered['SEASON_ID'] == training_season][feature_names]
