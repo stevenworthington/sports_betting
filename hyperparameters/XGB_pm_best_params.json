@@ -2,7 +2,7 @@
     "alpha": 1,
     "booster": "gbtree",
     "gamma": 5,
-    "lambda": 10,
+    "lambda": 5,
     "learning_rate": 1.0,
     "max_depth": 4
 }

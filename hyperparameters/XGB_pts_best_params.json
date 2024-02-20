@@ -1,6 +1,6 @@
 {
     "alpha": 1,
-    "booster": "dart",
+    "booster": "gbtree",
     "gamma": 5,
     "lambda": 5,
     "learning_rate": 1.0,
