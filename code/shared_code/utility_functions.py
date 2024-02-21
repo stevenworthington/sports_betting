@@ -365,10 +365,11 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season, output_path
 #################################################################################
 ##### Function to create an expanding window time series split
 #################################################################################
-def expanding_window_ts_split(df, initial_train_size, test_size=1, ensure_diversity=False, target_col=None, expansion_limit=None):
+def expanding_window_ts_split(df, initial_train_size, test_size=1, ensure_diversity=False, 
+                              target_col=None, skip_start=0, expansion_limit=None):
     """
     Generate indices to split data into training and test sets for expanding window time series cross-validation,
-    with an option to ensure that the initial training set includes a diversity of classes.
+    with options to ensure initial training set includes a diversity of classes, and to skip the first n testing observations.
     
     Parameters:
     - df (pd.DataFrame): The DataFrame to be split, which should contain both features and the target column.
@@ -376,6 +377,7 @@ def expanding_window_ts_split(df, initial_train_size, test_size=1, ensure_divers
     - test_size (int): The size of the test set for each split. Default is 1.
     - ensure_diversity (bool): If True, adjusts the initial_train_size to ensure the training set starts with both classes present, if the target column's diversity allows for it. Default is False.
     - target_col (str): The name of the target column to check for class diversity. Required if ensure_diversity is True.
+    - skip_start (int): The number of initial testing observations to skip before starting the expanding window process. Default is 0.
     - expansion_limit (int, optional): The maximum number of times the training set is expanded by 1 observation during the expanding window process. This parameter controls the total number of train-test splits generated, indirectly determining the final size of the training set. If set, the training process will stop once this limit is reached, potentially leaving some data unused. If None, the training set will expand until all but the last observation are used for training.
     
     Yields:
@@ -392,13 +394,14 @@ def expanding_window_ts_split(df, initial_train_size, test_size=1, ensure_divers
         second_class_start = np.min(np.where(target_values != target_values[0])[0])
         initial_train_size = max(initial_train_size, second_class_start + 1)
 
-    if len(df) < initial_train_size + test_size:
-        raise ValueError("Dataset is not large enough for the specified initial train size and test size.")
+    if len(df) < initial_train_size + test_size + skip_start:
+        raise ValueError("Dataset is not large enough for the specified initial train size, test size, and skip start.")
 
     indices = np.arange(len(df))
     expansion_count = 0  # initialize expansion count
 
-    for start_index in range(initial_train_size, len(df) - test_size + 1):
+    # adjust start_index by skip_start to begin yielding splits after skipping initial observations
+    for start_index in range(initial_train_size + skip_start, len(df) - test_size + 1):
         if expansion_limit is not None and expansion_count >= expansion_limit:
             break  # stop yielding new splits once the expansion limit is reached
 
@@ -412,7 +415,8 @@ def expanding_window_ts_split(df, initial_train_size, test_size=1, ensure_divers
 #################################################################################
 ##### Function to train models on an expanding window time series split
 #################################################################################
-def train_with_expanding_window(df, initial_train_size, test_size, target_col, model, ensure_diversity=False, expansion_limit=None):
+def train_with_expanding_window(df, initial_train_size, test_size, target_col, model, ensure_diversity=False, 
+                                skip_start=0, expansion_limit=None, fitted_model=False):
     """
     Trains a given model using an expanding window approach on a specified DataFrame.
 
@@ -423,7 +427,9 @@ def train_with_expanding_window(df, initial_train_size, test_size, target_col, m
     - target_col (str): The name of the target column in `df`.
     - model (model object): The instantiated model to be trained, e.g., LinearRegression() or LogisticRegression().
     - ensure_diversity (bool, optional): For logistic regression, ensures the initial training data includes both classes. Default is False.
+    - skip_start (int): The number of initial testing observations to skip before starting the expanding window process. Default is 0.
     - expansion_limit (int, optional): The maximum number of times the training set is expanded by 1 observation during the expanding window process. This parameter controls the total number of train-test splits generated, indirectly determining the final size of the training set. If set, the training process will stop once this limit is reached, potentially leaving some data unused. If None, the training set will expand until all but the last observation are used for training.
+    - fitted_model (bool): whether to return the fitted model instance.
 
     Returns:
     - model_outputs (list): A list of model predictions or probabilities for the test sets across all splits.
@@ -433,7 +439,6 @@ def train_with_expanding_window(df, initial_train_size, test_size, target_col, m
     trains the specified `model` on each training split, and stores the model's predictions or probabilities.
     """
     import time
-    from xgboost import XGBClassifier, XGBRegressor
     
     start_time = time.time()
 
@@ -443,7 +448,8 @@ def train_with_expanding_window(df, initial_train_size, test_size, target_col, m
 
     for train_indices, test_indices in expanding_window_ts_split(
         df, initial_train_size, test_size=test_size, ensure_diversity=ensure_diversity, 
-        target_col=target_col if ensure_diversity else None, expansion_limit=expansion_limit):
+        target_col=target_col if ensure_diversity else None, skip_start=skip_start,
+        expansion_limit=expansion_limit):
         
         # get training and testing data for this window
         X_train = df.iloc[train_indices].drop(columns=target_col)
@@ -471,14 +477,17 @@ def train_with_expanding_window(df, initial_train_size, test_size, target_col, m
 
     end_time = time.time()
     print(f"Total time taken: {end_time - start_time:.2f} seconds")
-
-    return model, model_outputs, y_true
+    
+    if fitted_model:
+        return model, model_outputs, y_true
+    else:
+        return model_outputs, y_true
 
 
 #################################################################################
 ##### Function to train models on a hyperparamter grid with expanding window
 #################################################################################
-def train_models_over_grid(df, target_col, initial_train_size, expansion_limit, test_size, 
+def train_models_over_grid(df, target_col, initial_train_size, skip_start, expansion_limit, test_size, 
                            model_class, constant_params, explore_params):
     """
     Trains models over a grid of hyperparameters.
@@ -487,6 +496,7 @@ def train_models_over_grid(df, target_col, initial_train_size, expansion_limit, 
     - df (pd.DataFrame): The dataset to use for training.
     - target_col (str): The name of the target column.
     - initial_train_size (int): Starting size of the training set.
+    - skip_start (int): The number of initial testing observations to skip before starting the expanding window process. Default is 0.
     - expansion_limit (int): Maximum number of new training observations in expansion.
     - test_size (int): Size of the test dataset for each split (LOO cross-validation).
     - model_class: The class of the model to instantiate.
@@ -515,6 +525,7 @@ def train_models_over_grid(df, target_col, initial_train_size, expansion_limit, 
         model_outputs, y_true = train_with_expanding_window(
             df=df,
             initial_train_size=initial_train_size,
+            skip_start=skip_start,
             expansion_limit=expansion_limit,
             test_size=test_size,
             target_col=target_col,
@@ -536,51 +547,53 @@ def train_models_over_grid(df, target_col, initial_train_size, expansion_limit, 
 #################################################################################
 ##### Function to create a rolling window time series split
 #################################################################################
-def rolling_window_ts_split(df, train_size, test_size, ensure_diversity=False, target_col=None, advancement_limit=None):
+def rolling_window_ts_split(df, train_size, test_size, ensure_diversity=False, 
+                            target_col=None, skip_start=0, advancement_limit=None):
     """
-    Generate indices to split data into training and test sets for rolling window time series cross-validation.
-    
-    Optionally ensures that the initial training set includes a diversity of classes for logistic regression training.
-    
+    Generate indices to split data into training and test sets for rolling window time series cross-validation,
+    with an option to skip a specified number of observations at the start.
+
     Parameters:
     - df (pd.DataFrame): The DataFrame containing both features and the target column.
     - train_size (int): The size of the training set for each split.
     - test_size (int): The size of the test set for each split.
     - ensure_diversity (bool): If True, checks to ensure the initial training set includes at least two classes. Default is False.
     - target_col (str): The name of the target column to check for class diversity. Required if ensure_diversity is True.
-    - - advancement_limit (int, optional): Specifies the maximum number of times the training window is allowed to advance during the rolling window process. This parameter effectively limits the number of train-test splits generated, allowing for control over the number of models trained and tested, which can be useful for large datasets or for limiting computational expense. If not set, or if set to None, the window will advance until it reaches the end of the dataset, making use of all possible train-test splits given the `train_size` and `test_size` parameters. Setting this parameter helps in focusing the training and testing process on a specific subset of the dataset, potentially leaving some data unused at the end of the dataset.
-    
+    - skip_start (int, optional): Specifies the number of observations to skip at the start before beginning the rolling window process. Default is 0.
+    - advancement_limit (int, optional): Specifies the maximum number of times the training window is allowed to advance.
+
     Yields:
     - train_indices (np.array): Indices for the training set for each split.
     - test_indices (np.array): Indices for the test set for each split.
-    
-    Raises:
-    - ValueError: If the dataset is not large enough for the specified train and test sizes, or if ensure_diversity is True but the initial training set does not include both classes.
     """
     import numpy as np
     
     if ensure_diversity and target_col is not None:
-        # ensure initial training set includes both classes, adjust train_size if necessary
+        # Ensure initial training set includes both classes, adjust train_size if necessary
         target_values = df[target_col].values
         unique_classes = np.unique(target_values[:train_size])
         if len(unique_classes) < 2:
             raise ValueError("Initial training set does not include both classes.")
     
-    if len(df) < train_size + test_size:
-        raise ValueError("The dataset is not large enough for the specified train and test sizes.")
+    total_length = len(df)
+    if total_length < train_size + test_size + skip_start:
+        raise ValueError("The dataset is not large enough for the specified configuration.")
 
-    indices = np.arange(len(df))
-    max_start_index = len(df) - train_size - test_size + 1
+    indices = np.arange(total_length)
+    max_start_index = total_length - train_size - test_size + 1
     actual_advancements = min(advancement_limit, max_start_index) if advancement_limit is not None else max_start_index
 
-    for start_index in range(actual_advancements):
+    for start_index in range(skip_start, actual_advancements + skip_start):
+        if start_index + train_size + test_size > total_length:
+            break  # Ensure we don't exceed the dataset size
         yield indices[start_index: start_index + train_size], indices[start_index + train_size: start_index + train_size + test_size]
 
 
 #################################################################################
 ##### Function to train models on an rolling window time series split
 #################################################################################
-def train_with_rolling_window(df, train_size, test_size, target_col, model, ensure_diversity=False, advancement_limit=None):
+def train_with_rolling_window(df, train_size, test_size, target_col, model, ensure_diversity=False, 
+                              skip_start=0, advancement_limit=None, fitted_model=False):
     """
     Trains a specified model using a rolling window approach on a DataFrame.
 
@@ -591,7 +604,9 @@ def train_with_rolling_window(df, train_size, test_size, target_col, model, ensu
     - target_col (str): The name of the target column in `df`.
     - model (model object): The instantiated model to be trained. This can be any model that conforms to the scikit-learn model interface, such as instances of `LinearRegression` or `LogisticRegression`.
     - ensure_diversity (bool, optional): Indicates whether to ensure the initial training data includes a diverse set of classes for classification tasks. This is primarily relevant for logistic regression and similar models where class diversity in the training set might impact model training. Default is False.
+    - skip_start (int, optional): Specifies the number of observations to skip at the start before beginning the rolling window process. Default is 0.
     - advancement_limit (int, optional): Specifies the maximum number of times the training window is allowed to advance during the rolling window process. This parameter effectively limits the number of train-test splits generated, allowing for control over the number of models trained and tested, which can be useful for large datasets or for limiting computational expense. If not set, or if set to None, the window will advance until it reaches the end of the dataset, making use of all possible train-test splits given the `train_size` and `test_size` parameters. Setting this parameter helps in focusing the training and testing process on a specific subset of the dataset, potentially leaving some data unused at the end of the dataset.
+    - fitted_model (bool): whether to return the fitted model instance.
 
     Returns:
     - model_outputs (list): A list of model predictions or probabilities for the test sets across all splits. For logistic regression models, this will be the probabilities of the positive class. For linear regression models, it will be direct predictions.
@@ -610,7 +625,8 @@ def train_with_rolling_window(df, train_size, test_size, target_col, model, ensu
     # use the rolling window index function for data splits
     for train_indices, test_indices in rolling_window_ts_split(
         df, train_size, test_size, ensure_diversity=ensure_diversity, 
-        target_col=target_col if ensure_diversity else None, advancement_limit=advancement_limit):
+        target_col=target_col if ensure_diversity else None, skip_start=skip_start,
+        advancement_limit=advancement_limit):
         
         # get training and testing data for this window
         X_train = df.iloc[train_indices].drop(columns=target_col)
@@ -639,7 +655,10 @@ def train_with_rolling_window(df, train_size, test_size, target_col, model, ensu
     end_time = time.time()
     print(f"Total time taken: {end_time - start_time:.2f} seconds")
 
-    return model_outputs, y_true
+    if fitted_model:
+        return model, model_outputs, y_true
+    else:
+        return model_outputs, y_true
 
 
 #################################################################################
@@ -797,9 +816,9 @@ def handle_non_serializable(obj):
 ##### Function to plot model performance for continuous outcomes with expanding window
 #################################################################################
 def plot_model_performance(title, y_label, metric_key, metrics, df, model_outputs, target_col, 
-                           initial_train_size, expansion_limit=None, test_size=1):
+                           initial_train_size, skip_start=0, expansion_limit=None, test_size=1):
     """
-    Plots the observed vs. predicted values and includes a performance metric on the plot.
+    Plots the observed vs. predicted values and includes a performance metric on the plot, with adjustments for skip_start.
 
     Parameters:
     - title (str): The title for the plot.
@@ -810,25 +829,29 @@ def plot_model_performance(title, y_label, metric_key, metrics, df, model_output
     - model_outputs (list or np.array): The model's predictions.
     - target_col (str): The name of the target column in `df`.
     - initial_train_size (int): The initial size of the training dataset.
+    - skip_start (int): The number of initial testing observations to skip.
     - expansion_limit (int or None): The maximum number of times the training set is expanded.
     - test_size (int): The size of the test dataset for each split.
     """
     import matplotlib.pyplot as plt
     
+    # adjust the starting index of observed values based on skip_start
+    start_index_adjusted = initial_train_size + skip_start * test_size
+
     # set end_index based on whether an expansion_limit is specified
     if expansion_limit is not None:
-        end_index = initial_train_size + expansion_limit * test_size
+        end_index = start_index_adjusted + expansion_limit * test_size
     else:
         # use the length of model_outputs to determine end_index when no limit is specified
-        end_index = initial_train_size + len(model_outputs) * test_size
+        end_index = start_index_adjusted + len(model_outputs) * test_size
 
     # adjust the observed_values slice accordingly
-    observed_values = df[target_col][initial_train_size:end_index]
+    observed_values = df[target_col][start_index_adjusted:end_index]
     
     # ensure lengths are the same (for sanity check)
     assert len(model_outputs) == len(observed_values), "Length mismatch between predictions and observed values."
 
-    # plot
+    # Plot
     plt.figure(figsize=(12, 4))
     plt.plot(observed_values.index, observed_values, label='Observed', color='blue', alpha=0.5)
     plt.plot(observed_values.index, model_outputs, label='Predicted', color='red', alpha=0.5)
@@ -847,9 +870,10 @@ def plot_model_performance(title, y_label, metric_key, metrics, df, model_output
 ##### Function to plot model performance for continuous outcomes with rolling window
 #################################################################################
 def plot_model_performance_rolling(title, y_label, metric_key, metrics, df, model_outputs, target_col,
-                                   train_size, advancement_limit=None, test_size=1):
+                                   train_size, skip_start=0, advancement_limit=None, test_size=1):
     """
     Plots observed vs. predicted values for a model using a rolling window approach and includes a performance metric.
+    Adjusts for skipped observations at the start of the rolling window process.
 
     Parameters:
     - title (str): Title for the plot.
@@ -860,17 +884,21 @@ def plot_model_performance_rolling(title, y_label, metric_key, metrics, df, mode
     - model_outputs (list or np.array): Model's predictions.
     - target_col (str): Name of the target column in `df`.
     - train_size (int): Initial size of the training dataset.
-    - advancement_limit (int or None): Maximum number of times the training set is expanded. If None, calculates based on the length of model_outputs.
+    - skip_start (int): Number of initial observations to skip in the rolling window process.
+    - advancement_limit (int or None): Maximum number of times the training set is expanded.
     - test_size (int): Size of the test dataset for each split.
     """
     import matplotlib.pyplot as plt
-    
-    if advancement_limit is not None:
-        end_index = train_size + advancement_limit * test_size
-    else:
-        end_index = train_size + len(model_outputs) * test_size
 
-    observed_values = df[target_col][train_size:end_index]
+    # Adjust start index for plotting to account for skip_start
+    plot_start_index = train_size + skip_start * test_size
+
+    if advancement_limit is not None:
+        end_index = plot_start_index + advancement_limit * test_size
+    else:
+        end_index = plot_start_index + len(model_outputs) * test_size
+
+    observed_values = df[target_col][plot_start_index:end_index]
 
     assert len(model_outputs) == len(observed_values), "Length mismatch between predictions and observed values."
 
