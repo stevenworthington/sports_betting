@@ -1,5 +1,5 @@
 {
-    "C": 10.0,
-    "epsilon": 0.5,
+    "C": 1.0,
+    "epsilon": 0.1,
     "kernel": "rbf"
 }
