@@ -278,7 +278,7 @@ def plot_team_bs_stats(df, team_col, feature_prefix, n_rows=3, n_cols=3):
 #################################################################################
 ##### Function to load, filter (by time), and scale data for modeling
 #################################################################################
-def load_and_scale_data(file_path, seasons_to_keep, training_season, 
+def load_and_scale_data(file_path, seasons_to_keep, training_season, output_path,
                         scaler_type='minmax', scale_target=False):
     """
     Loads data from a specified file, filters for specific seasons, scales the features (and optionally the target),
@@ -321,7 +321,7 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season,
     
     # extract non-statistical data for these rows
     dropped_obs_data = missing_features_rows[['SEASON_ID', 'GAME_ID', 'GAME_DATE', 'HOME_TEAM_NAME', 'AWAY_TEAM_NAME']]
-    dropped_obs_data.to_csv('../data/processed/nba_rolling_box_scores_dropped_observations.csv', index=False)
+    dropped_obs_data.to_csv(output_path, index=False)
 
     # drop rows with missing values from df_filtered
     df_filtered = df_filtered.dropna(subset=feature_names)
