@@ -9,6 +9,7 @@ from functools import reduce
 import random as rn
 import numpy as np
 import pandas as pd
+import joblib
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import seaborn as sns

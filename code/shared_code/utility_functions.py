@@ -472,7 +472,7 @@ def train_with_expanding_window(df, initial_train_size, test_size, target_col, m
     end_time = time.time()
     print(f"Total time taken: {end_time - start_time:.2f} seconds")
 
-    return model_outputs, y_true
+    return model, model_outputs, y_true
 
 
 #################################################################################
