@@ -199,6 +199,97 @@ def calculate_rolling_stats(df, team_col, stats_cols, window_size, min_obs,
 
     return rolling_stats
 
+#################################################################################
+##### Function to calculate rolling difference average statistics
+#################################################################################
+def calculate_rolling_diff_stats(df, team_col, stats_cols, window_size, min_obs,
+                            stratify_by_season=True, exclude_initial_games=0):
+    """
+    Calculate rolling average of the over/under performance in a given statistic for a given team compared to their opponent, 
+    optionally stratifying by season, and excluding the initial games from the rolling average calculations.
+    Example: Average the last n games of the statistics for (HOME_PTS - AWAY_PTS) or (HOME_FG_PCT - AWAY_FG_PCT).
+    This will give us intuition on how the team is performing against its opponents. 
+
+    Parameters:
+    - df (pd.DataFrame): DataFrame containing the team data.
+    - team_col (str): Column name identifying the team within the DataFrame.
+    - stats_cols (list): List of statistic columns to calculate rolling averages for.
+    - window_size (int): Number of games over which to calculate the rolling average.
+    - min_obs (int): Minimum number of observations required to calculate the rolling average.
+    - stratify_by_season (bool): Whether to reset rolling calculations at the start of each season.
+    - exclude_initial_games (int): Number of initial games in each season to exclude from the rolling calculations.
+
+    Returns:
+    - pd.DataFrame: DataFrame with rolling statistics, excluding initial games as specified.
+    """
+    import pandas as pd
+    import numpy as np
+    
+    # determine whether to use 'HOME' or 'AWAY' stats
+    prefix = 'HOME_' if 'HOME' in team_col else 'AWAY_'
+
+    # filter the stats columns based on prefix
+    # Stats columns for Home, Away, and both will be required for calculation
+    filtered_stats_cols_home = [col for col in stats_cols if col.startswith('HOME_')]
+    filtered_stats_cols_away = [col for col in stats_cols if col.startswith('AWAY_')]
+    filtered_stats_cols_both = [col for col in stats_cols if col.startswith('HOME_') or col.startswith('AWAY_')]
+
+
+    # ensure data is sorted by team, season (if stratified), and date for accurate rolling calculation
+    # set GAME_ID and GAME_DATE as the indices to preserve them through the rolling operation
+    sort_cols = [team_col, 'SEASON_ID', 'GAME_DATE'] if stratify_by_season else [team_col, 'GAME_DATE']
+    df_sorted = df.sort_values(by=sort_cols).set_index(['GAME_ID', 'GAME_DATE'])
+
+    # apply grouping for rolling calculation
+    group_cols = [team_col, 'SEASON_ID'] if stratify_by_season else [team_col]
+    
+    # perform the rolling operation, preserving GAME_ID in the index
+    if prefix == 'HOME_':
+
+        rolling_stats = (df_sorted.groupby(group_cols)[filtered_stats_cols_both]
+                                .diff(axis=1,periods=-18)[filtered_stats_cols_home]
+                                .rolling(window=window_size, min_periods=min_obs)
+                                .mean()
+                                .round(3)
+                                .groupby(group_cols) # need to groupby again for shift
+                                .shift(1)  # lag to exclude the current game from the rolling average
+                                .add_prefix('ROLLDIFF_')
+                                .reset_index() # reset the index to convert GAME_ID back into a column
+                        )
+
+    if prefix == 'AWAY_':
+
+        rolling_stats = (df_sorted.groupby(group_cols)[filtered_stats_cols_both]
+                                .diff(axis=1,periods=18)[filtered_stats_cols_away]
+                                .rolling(window=window_size, min_periods=min_obs)
+                                .mean()
+                                .round(3)
+                                .groupby(group_cols) # need to groupby again for shift
+                                .shift(1)  # lag to exclude the current game from the rolling average
+                                .add_prefix('ROLLDIFF_')
+                                .reset_index() # reset the index to convert GAME_ID back into a column
+                        )
+
+    # adjust 'filtered_stats_cols' to include the 'ROLL_' prefix
+    if prefix == 'HOME_':
+        rolled_filtered_stats_cols = ['ROLLDIFF_' + col for col in filtered_stats_cols_home]
+
+    if prefix == 'AWAY_':
+        rolled_filtered_stats_cols = ['ROLLDIFF_' + col for col in filtered_stats_cols_away]
+
+    # exclude initial games if specified by setting the first n rows
+    # to NaN within each group for the statistical columns
+    if exclude_initial_games > 0:
+        
+        def set_initial_games_to_nan(group):
+            group.loc[group.index[:exclude_initial_games], rolled_filtered_stats_cols] = np.nan
+            return group
+
+        # apply the function to each group
+        rolling_stats = rolling_stats.groupby([team_col] + (['SEASON_ID'] if stratify_by_season else [])).apply(set_initial_games_to_nan)
+
+    return rolling_stats
+
     
 #################################################################################
 ##### Function to calculate rolling average statistics and add to a DataFrame
@@ -236,7 +327,43 @@ def process_rolling_stats(df, stats_cols, target_cols, window_size, min_obs,
     
     return final_df
 
+#################################################################################
+##### Function to calculate rolling average statistics and add to a DataFrame
+#################################################################################
+def process_rolling_diff_stats(df, stats_cols, target_cols, window_size, min_obs,  
+                          stratify_by_season=True, exclude_initial_games=0):
+    """
+    Process the DataFrame to add rolling statistics for home and away teams, with an option to exclude the initial games from the rolling calculation. Optionally allows for rolling calculations to reset at the start of each new season or be contiguous across seasons. Merges rolling statistics into a subset of the original DataFrame that includes specified target columns, using GAME_ID as the unique identifier.
+
+    Parameters:
+    - df: The original DataFrame.
+    - stats_cols: List of columns for rolling statistics.
+    - target_cols: List of target column names to be included in the final DataFrame.
+    - window_size: The size of the rolling window.
+    - min_obs: Minimum number of observations for rolling calculation.
+    - stratify_by_season: If True, calculate rolling stats separately for each season. If False, calculate rolling stats across seasons.
+    - exclude_initial_games: Number of initial games to exclude from the rolling calculations.
     
+    Returns:
+    - DataFrame with added rolling statistics merged into the specified target columns.
+    """
+    # create a subset of the original DataFrame that includes only the target columns
+    df_subset = df[['GAME_ID'] + target_cols].drop_duplicates()
+
+    # calculate rolling stats for home and away teams with optional season stratification and exclusion of initial games
+    rolling_home_stats = calculate_rolling_diff_stats(df, 'HOME_TEAM_NAME', stats_cols, window_size, min_obs, stratify_by_season, exclude_initial_games)
+    rolling_away_stats = calculate_rolling_diff_stats(df, 'AWAY_TEAM_NAME', stats_cols, window_size, min_obs, stratify_by_season, exclude_initial_games)
+
+    # merge the rolling stats into the subset DataFrame using GAME_ID as the merge key
+    final_df = df_subset.merge(rolling_home_stats, how='left', on='GAME_ID')
+    final_df = final_df.merge(rolling_away_stats.drop(['SEASON_ID', 'GAME_DATE'], axis=1), how='left', on='GAME_ID')
+    
+    # sort the final DataFrame by GAME_DATE from oldest to newest
+    final_df = final_df.sort_values(by='GAME_DATE')
+    
+    return final_df
+
+
 #################################################################################
 ##### Function to plot targets against rolling average statistics over time
 #################################################################################
