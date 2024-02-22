@@ -278,8 +278,8 @@ def plot_team_bs_stats(df, team_col, feature_prefix, n_rows=3, n_cols=3):
 #################################################################################
 ##### Function to load, filter (by time), and scale data for modeling
 #################################################################################
-def load_and_scale_data(file_path, seasons_to_keep, training_season, output_path,
-                        scaler_type='minmax', scale_target=False):
+def load_and_scale_data(file_path, seasons_to_keep, training_season, scaler_type='minmax',
+                        scale_target=False, csv_out=False, output_path=None):
     """
     Loads data from a specified file, filters for specific seasons, scales the features (and optionally the target),
     using only the training data for scaler fitting, and applies this scaling across specified seasons.
@@ -290,6 +290,8 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season, output_path
     - training_season (str): The season that the scaler should be fitted on.
     - scaler_type (str): The type of scaler to use for feature scaling ('minmax' or 'standard').
     - scale_target (bool): Whether to scale the target variable(s) alongside the features.
+    - csv_out(bool): Whether to return csv files with the missing / non-missing observations meta-data
+    - output_path (str, optional): Relative file path for the csv files.
     
     Returns:
     - Tuple of pd.DataFrame: Scaled DataFrames for features (and targets if `scale_target` is True) for each target variable.
@@ -316,13 +318,22 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season, output_path
     # define feature names
     feature_names = [col for col in df_filtered.columns if col.startswith('ROLL_')]
     
-    # identify rows with missing values in any of the feature_names
+    # identify rows with missing values in any of the feature_names and extract non-statistical data
     missing_features_rows = df_filtered[df_filtered[feature_names].isnull().any(axis=1)]
-    
-    # extract non-statistical data for these rows
     dropped_obs_data = missing_features_rows[['SEASON_ID', 'GAME_ID', 'GAME_DATE', 'HOME_TEAM_NAME', 'AWAY_TEAM_NAME']]
-    dropped_obs_data.to_csv(output_path, index=False)
-
+    
+    # identify rows with no missing values in any of the feature_names and extract non-statistical data
+    no_missing_features_rows = df_filtered[~df_filtered[feature_names].isnull().any(axis=1)]
+    kept_obs_data = no_missing_features_rows[['SEASON_ID', 'GAME_ID', 'GAME_DATE', 'HOME_TEAM_NAME', 'AWAY_TEAM_NAME']]
+    
+    # extract non-statistical data for non-missing rows in the test set (season 2023-24)
+    kept_test_set_obs = kept_obs_data[kept_obs_data['SEASON_ID'] == '2023-24']
+    
+    if csv_out and (output_path is not None):
+        dropped_obs_data.to_csv(f"{output_path}nba_rolling_box_scores_dropped_observations.csv", index=False)
+        kept_obs_data.to_csv(f"{output_path}nba_rolling_box_scores_kept_observations.csv", index=False)
+        kept_test_set_obs.to_csv(f"{output_path}nba_rolling_box_scores_test_set_observations.csv", index=False)
+        
     # drop rows with missing values from df_filtered
     df_filtered = df_filtered.dropna(subset=feature_names)
     
@@ -359,7 +370,7 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season, output_path
     # print total number of unique games in the filtered data
     print(f"Total number of games across sampled seasons: {df_filtered['GAME_ID'].nunique()} games")
     
-    return pts_scaled_df, pm_scaled_df, res_scaled_df
+    return pts_scaled_df, pm_scaled_df, res_scaled_df, kept_test_set_obs
 
         
 #################################################################################
