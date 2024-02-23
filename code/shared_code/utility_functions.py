@@ -172,7 +172,7 @@ def calculate_rolling_stats(df, team_col, stats_cols, window_size, min_obs,
     # apply grouping for rolling calculation
     group_cols = [team_col, 'SEASON_ID'] if stratify_by_season else [team_col]
     
-    # perform the rolling operation, preserving GAME_ID in the index
+    # perform the rolling operation, preserving GAME_ID and GAME DATE in the index
     rolling_stats = (df_sorted.groupby(group_cols)[filtered_stats_cols]
                               .rolling(window=window_size, min_periods=min_obs)
                               .mean()
@@ -180,7 +180,7 @@ def calculate_rolling_stats(df, team_col, stats_cols, window_size, min_obs,
                               .groupby(group_cols) # need to groupby again for shift
                               .shift(1)  # lag to exclude the current game from the rolling average
                               .add_prefix('ROLL_')
-                              .reset_index() # reset the index to convert GAME_ID back into a column
+                              .reset_index() # reset the index to convert GAME_ID and GAME DATE back into columns
                      )
 
     # adjust 'filtered_stats_cols' to include the 'ROLL_' prefix
@@ -199,11 +199,12 @@ def calculate_rolling_stats(df, team_col, stats_cols, window_size, min_obs,
 
     return rolling_stats
 
+
 #################################################################################
 ##### Function to calculate rolling difference average statistics
 #################################################################################
 def calculate_rolling_diff_stats(df, team_col, stats_cols, window_size, min_obs,
-                            stratify_by_season=True, exclude_initial_games=0):
+                                 stratify_by_season=True, exclude_initial_games=0):
     """
     Calculate rolling average of the over/under performance in a given statistic for a given team compared to their opponent, 
     optionally stratifying by season, and excluding the initial games from the rolling average calculations.
@@ -234,7 +235,6 @@ def calculate_rolling_diff_stats(df, team_col, stats_cols, window_size, min_obs,
     filtered_stats_cols_away = [col for col in stats_cols if col.startswith('AWAY_')]
     filtered_stats_cols_both = [col for col in stats_cols if col.startswith('HOME_') or col.startswith('AWAY_')]
 
-
     # ensure data is sorted by team, season (if stratified), and date for accurate rolling calculation
     # set GAME_ID and GAME_DATE as the indices to preserve them through the rolling operation
     sort_cols = [team_col, 'SEASON_ID', 'GAME_DATE'] if stratify_by_season else [team_col, 'GAME_DATE']
@@ -243,34 +243,34 @@ def calculate_rolling_diff_stats(df, team_col, stats_cols, window_size, min_obs,
     # apply grouping for rolling calculation
     group_cols = [team_col, 'SEASON_ID'] if stratify_by_season else [team_col]
     
-    # perform the rolling operation, preserving GAME_ID in the index
+    # perform the rolling operation, preserving GAME_ID and GAME DATE in the index
     if prefix == 'HOME_':
 
         rolling_stats = (df_sorted.groupby(group_cols)[filtered_stats_cols_both]
-                                .diff(axis=1,periods=-18)[filtered_stats_cols_home]
-                                .rolling(window=window_size, min_periods=min_obs)
-                                .mean()
-                                .round(3)
-                                .groupby(group_cols) # need to groupby again for shift
-                                .shift(1)  # lag to exclude the current game from the rolling average
-                                .add_prefix('ROLLDIFF_')
-                                .reset_index() # reset the index to convert GAME_ID back into a column
+                                  .diff(axis=1, periods=-18)[filtered_stats_cols_home]
+                                  .rolling(window=window_size, min_periods=min_obs)
+                                  .mean()
+                                  .round(3)
+                                  .groupby(group_cols) # need to groupby again for shift
+                                  .shift(1)  # lag to exclude the current game from the rolling average
+                                  .add_prefix('ROLLDIFF_')
+                                  .reset_index() # reset the index to convert GAME_ID and GAME_DATE back into columns
                         )
 
     if prefix == 'AWAY_':
 
         rolling_stats = (df_sorted.groupby(group_cols)[filtered_stats_cols_both]
-                                .diff(axis=1,periods=18)[filtered_stats_cols_away]
-                                .rolling(window=window_size, min_periods=min_obs)
-                                .mean()
-                                .round(3)
-                                .groupby(group_cols) # need to groupby again for shift
-                                .shift(1)  # lag to exclude the current game from the rolling average
-                                .add_prefix('ROLLDIFF_')
-                                .reset_index() # reset the index to convert GAME_ID back into a column
+                                  .diff(axis=1, periods=18)[filtered_stats_cols_away]
+                                  .rolling(window=window_size, min_periods=min_obs)
+                                  .mean()
+                                  .round(3)
+                                  .groupby(group_cols) # need to groupby again for shift
+                                  .shift(1)  # lag to exclude the current game from the rolling average
+                                  .add_prefix('ROLLDIFF_')
+                                  .reset_index() # reset the index to convert GAME_ID and GAME_DATE back into columns
                         )
 
-    # adjust 'filtered_stats_cols' to include the 'ROLL_' prefix
+    # adjust 'filtered_stats_cols' to include the 'ROLLDIFF_' prefix
     if prefix == 'HOME_':
         rolled_filtered_stats_cols = ['ROLLDIFF_' + col for col in filtered_stats_cols_home]
 
@@ -327,13 +327,14 @@ def process_rolling_stats(df, stats_cols, target_cols, window_size, min_obs,
     
     return final_df
 
+
 #################################################################################
-##### Function to calculate rolling average statistics and add to a DataFrame
+##### Function to calculate rolling difference average statistics and add to a DataFrame
 #################################################################################
 def process_rolling_diff_stats(df, stats_cols, target_cols, window_size, min_obs,  
-                          stratify_by_season=True, exclude_initial_games=0):
+                               stratify_by_season=True, exclude_initial_games=0):
     """
-    Process the DataFrame to add rolling statistics for home and away teams, with an option to exclude the initial games from the rolling calculation. Optionally allows for rolling calculations to reset at the start of each new season or be contiguous across seasons. Merges rolling statistics into a subset of the original DataFrame that includes specified target columns, using GAME_ID as the unique identifier.
+    Process the DataFrame to add rolling statistics for home and away teams, with an option to exclude the initial games from the rolling calculation. Optionally allows for rolling calculations to reset at the start of each new season or be contiguous across seasons. Merges rolling difference statistics into a subset of the original DataFrame that includes specified target columns, using GAME_ID as the unique identifier.
 
     Parameters:
     - df: The original DataFrame.
@@ -405,8 +406,8 @@ def plot_team_bs_stats(df, team_col, feature_prefix, n_rows=3, n_cols=3):
 #################################################################################
 ##### Function to load, filter (by time), and scale data for modeling
 #################################################################################
-def load_and_scale_data(file_path, seasons_to_keep, training_season, scaler_type='minmax',
-                        scale_target=False, csv_out=False, output_path=None):
+def load_and_scale_data(file_path, seasons_to_keep, training_season, feature_prefix, 
+                        scaler_type='minmax', scale_target=False, csv_out=False, output_path=None):
     """
     Loads data from a specified file, filters for specific seasons, scales the features (and optionally the target),
     using only the training data for scaler fitting, and applies this scaling across specified seasons.
@@ -443,7 +444,7 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season, scaler_type
         raise ValueError("scaler must be either 'minmax' or 'standard'")
     
     # define feature names
-    feature_names = [col for col in df_filtered.columns if col.startswith('ROLL_')]
+    feature_names = [col for col in df_filtered.columns if col.startswith(feature_prefix)]
     
     # identify rows with missing values in any of the feature_names and extract non-statistical data
     missing_features_rows = df_filtered[df_filtered[feature_names].isnull().any(axis=1)]
@@ -1106,3 +1107,6 @@ def plot_classification_performance(y_true, model_outputs, pred_labels, cm_title
     
     plt.tight_layout()
     plt.show()
+
+
+
