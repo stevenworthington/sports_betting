@@ -1073,9 +1073,10 @@ def plot_model_performance_rolling(title, y_label, metric, df, model_outputs, ta
 #################################################################################
 ##### Function to plot classification performance
 #################################################################################
-def plot_classification_performance(y_true, model_outputs, pred_labels, cm_title='Confusion Matrix', roc_title='ROC Curve'):
+def plot_classification_performance(y_true, model_outputs, pred_labels, cm_title='Confusion Matrix',  
+                                    roc_title='ROC Curve', overall_title='Classification Performance'):
     """
-    Plots the confusion matrix and ROC curve for classification model results side by side.
+    Plots the confusion matrix and ROC curve for classification model results side by side, with an overall title above the plots.
 
     Parameters:
     - y_true (array-like): True labels.
@@ -1083,6 +1084,7 @@ def plot_classification_performance(y_true, model_outputs, pred_labels, cm_title
     - pred_labels (array-like): Predicted labels.
     - cm_title (str): Title for the confusion matrix plot.
     - roc_title (str): Title for the ROC curve plot.
+    - overall_title (str): Overall title for both plots.
     """
     import matplotlib.pyplot as plt
     from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, roc_curve, auc
@@ -1107,8 +1109,8 @@ def plot_classification_performance(y_true, model_outputs, pred_labels, cm_title
     axes[1].set_title(roc_title)
     axes[1].legend(loc="lower right")
     
-    plt.tight_layout()
+    plt.suptitle(overall_title, fontsize=14)  # set overall title for both plots
+    plt.tight_layout(rect=[0, 0.03, 1, 1])  # adjust layout to make room for the overall_title
     plt.show()
-
 
 
