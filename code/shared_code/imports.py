@@ -38,10 +38,10 @@ from imblearn.over_sampling import RandomOverSampler, SMOTE, SMOTENC, ADASYN, Bo
 from imblearn.under_sampling import RandomUnderSampler, ClusterCentroids
  
 # models
-from sklearn import tree
 from sklearn.neighbors import KNeighborsRegressor, KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.linear_model import LinearRegression, LogisticRegression, Lasso, Ridge, ElasticNet
+from sklearn.svm import SVR, SVC
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 from sklearn.ensemble import (
   BaggingRegressor, BaggingClassifier, 
