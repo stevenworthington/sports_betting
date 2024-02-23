@@ -686,7 +686,7 @@ def train_models_over_grid(df, target_col, initial_train_size, test_size, gap_si
         
         # store outputs and true values in the results dictionary
         results[f"run_{i}"] = {
-            "params": {**explore_param},
+            "params": {**constant_params, **explore_param},
             "model_outputs": model_outputs,
             "y_true": y_true
         }
@@ -879,7 +879,7 @@ def compile_results_to_dataframe(results, calculate_metrics_function=calculate_m
     - calculate_metrics_function (function): A function that calculates the desired metrics from 
                                              'model_outputs' and 'y_true'. This function should return 
                                              a dictionary where each key is the name of a metric and 
-                                             each value is the metric's value. Default is 'calculate_metrics'.
+                                             each value is the metric's value.
     
     Returns:
     - pd.DataFrame: A DataFrame where each row corresponds to a single model run, including columns 
@@ -935,7 +935,7 @@ def get_best_params(df, metric):
     - dict: A dictionary of the best hyperparameters, excluding the run ID and the metric itself.
     """
     # exclude 'run_id' and any metrics from the parameters
-    params_to_exclude = ['run_id', 'average_rmse', 'average_accuracy', 
+    params_to_exclude = ['run_id', 'average_rmse', 'null_rmse', 'average_accuracy', 
                          'average_f1_score', 'overall_auc', 'pred_labels']
 
     # determine whether to find the min or max value based on the metric
@@ -964,6 +964,8 @@ def handle_non_serializable(obj):
         return float(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
     else:
         raise TypeError("Unserializable object {} of type {}".format(obj, type(obj)))
     

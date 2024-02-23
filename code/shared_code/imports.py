@@ -6,6 +6,7 @@ import time
 from datetime import timedelta, datetime
 from pathlib import Path
 from functools import reduce
+import json
 import random as rn
 import numpy as np
 import pandas as pd
@@ -13,7 +14,6 @@ import joblib
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import seaborn as sns
-
 
 # plotting style
 plt.style.use('seaborn-v0_8-notebook')
@@ -39,16 +39,18 @@ from imblearn.under_sampling import RandomUnderSampler, ClusterCentroids
  
 # models
 from sklearn import tree
-from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neighbors import KNeighborsRegressor, KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
-from sklearn.linear_model import LinearRegression, LogisticRegression, LogisticRegressionCV
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+from sklearn.linear_model import LinearRegression, LogisticRegression, Lasso, Ridge, ElasticNet
+from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 from sklearn.ensemble import (
-  BaggingClassifier, BaggingRegressor, RandomForestClassifier, RandomForestRegressor,
-  AdaBoostClassifier, GradientBoostingClassifier, StackingRegressor
+  BaggingRegressor, BaggingClassifier, 
+  RandomForestRegressor, RandomForestClassifier, 
+  AdaBoostRegressor, AdaBoostClassifier, 
+  GradientBoostingRegressor, GradientBoostingClassifier, 
+  StackingRegressor, StackingClassifier
 )
 from xgboost import XGBClassifier, XGBRegressor
-from sklearn.ensemble import StackingClassifier
 
 # metrics & utilities 
 from sklearn.model_selection import train_test_split, cross_validate, cross_val_score, GridSearchCV, StratifiedKFold, TimeSeriesSplit
