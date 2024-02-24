@@ -1,8 +1,7 @@
 {
-    "alpha": 1,
-    "gamma": 5,
-    "lambda": 10,
-    "learning_rate": 2.0,
-    "max_depth": 4,
-    "n_estimators": 500
+    "alpha": 1.5,
+    "gamma": 3,
+    "lambda": 8,
+    "learning_rate": 1,
+    "max_depth": 4
 }
