@@ -1,8 +1,0 @@
-{
-    "alpha": 1,
-    "booster": "dart",
-    "gamma": 5,
-    "lambda": 5,
-    "learning_rate": 1.0,
-    "max_depth": 6
-}

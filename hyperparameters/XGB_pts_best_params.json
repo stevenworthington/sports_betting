@@ -1,8 +1,8 @@
 {
     "alpha": 1,
-    "booster": "gbtree",
     "gamma": 5,
-    "lambda": 5,
-    "learning_rate": 1.0,
-    "max_depth": 6
+    "lambda": 10,
+    "learning_rate": 2.0,
+    "max_depth": 4,
+    "n_estimators": 500
 }
