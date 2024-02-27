@@ -35,5 +35,28 @@ def get_advanced_team_stats(**kwargs):
     return leaguedashteamstats.LeagueDashTeamStats(**kwargs).get_data_frames()[0]
 
 
+def get_teams() -> pd.DataFrame:
+    return pd.DataFrame(teams.get_teams())
+
+
+def get_all_games_with_league_finder() -> pd.DataFrame:
+    team_ids = get_teams()["id"].tolist()
+
+    games_list = []
+
+    for id in team_ids:
+        gamefinder = leaguegamefinder.LeagueGameFinder(team_id_nullable=id)
+        games_list.append(gamefinder.get_data_frames()[0])
+        time.sleep(3)
+
+    games_df = pd.concat(games_list)
+    games_df["GAME_DATE"] = pd.to_datetime(games_df["GAME_DATE"])
+    return games_df
+
+
+def get_advanced_team_stats_30_years():
+    pass
+
+
 if __name__ == "__main__":
     df = get_advanced_team_stats_by_month("november")

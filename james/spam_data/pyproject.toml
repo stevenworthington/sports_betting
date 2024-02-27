@@ -16,6 +16,7 @@ license = {text = "MIT"}
 [project.optional-dependencies]
 eda = [
     "notebook>=7.1.0",
+    "jupyter>=1.0.0",
 ]
 
 [build-system]
