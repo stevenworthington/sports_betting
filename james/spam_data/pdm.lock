@@ -5,7 +5,7 @@
 groups = ["default", "dev", "eda"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:785b012abcb99134b92c0cd232fe2f8dfc922c7cfc35c99a441d93549a12007b"
+content_hash = "sha256:42721d95e1520dbd1876ea2fde3652d9dc41b6bd772d5d9c1c0c4fa7def357e5"
 
 [[package]]
 name = "anyio"
@@ -1094,6 +1094,8 @@ summary = "Powerful data structures for data analysis, time series, and statisti
 groups = ["default"]
 dependencies = [
     "numpy<2,>=1.22.4; python_version < \"3.11\"",
+    "numpy<2,>=1.23.2; python_version == \"3.11\"",
+    "numpy<2,>=1.26.0; python_version >= \"3.12\"",
     "python-dateutil>=2.8.2",
     "pytz>=2020.1",
     "tzdata>=2022.7",
