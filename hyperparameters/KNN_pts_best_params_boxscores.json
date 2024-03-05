@@ -1,7 +1,7 @@
 {
     "metric": "minkowski",
     "n_jobs": -1,
-    "n_neighbors": 6,
+    "n_neighbors": 23,
     "p": 2,
-    "weights": "distance"
+    "weights": "uniform"
 }

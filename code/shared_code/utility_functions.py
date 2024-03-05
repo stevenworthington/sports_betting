@@ -472,6 +472,9 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season, feature_pre
     training_features = df_filtered[df_filtered['SEASON_ID'] == training_season][feature_names]
     scaler.fit(training_features)
 
+    # transform the feature columns for the entire filtered dataset
+    df_filtered[feature_names] = scaler.transform(df_filtered[feature_names])
+
     # prepare to store scaled data for each target
     pts_scaled_df, pm_scaled_df, res_scaled_df = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 

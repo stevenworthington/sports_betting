@@ -1,7 +1,7 @@
 {
-    "C": 30,
+    "C": 1,
     "coef0": 0.0,
-    "epsilon": 3,
+    "epsilon": 2.0,
     "gamma": "scale",
     "kernel": "rbf",
     "shrinking": true
