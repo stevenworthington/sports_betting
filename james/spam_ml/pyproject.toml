@@ -1,29 +1,29 @@
 [project]
-name = "spam_data"
+name = "spam_ml"
 version = "0.1.0"
-description = "SPAM Capstone Data Library"
+description = "Default template for PDM package"
 authors = [
     {name = "James Milliman", email = "jaimsmilliman@gmail.com"},
 ]
 dependencies = [
-    "nba-api>=1.4.1",
-    "pandas>=2.2.0",
+    "scikit-learn>=1.4.1.post1",
+    "pandas>=2.2.1",
+    "spam-data @ file:///${PROJECT_ROOT}/../spam_data",
 ]
 requires-python = ">=3.9"
 readme = "README.md"
 license = {text = "MIT"}
 
-[project.optional-dependencies]
-eda = [
-    "notebook>=7.1.0",
-    "jupyter>=1.0.0",
-]
-
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
+
+[tool.pdm]
+distribution = true
+
 [tool.pdm.dev-dependencies]
-dev = [
-    "black>=24.2.0",
+eda = [
+    "jupyter>=1.0.0",
+    "notebook>=7.1.1",
 ]

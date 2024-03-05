@@ -7,4 +7,4 @@ def build_dataset(feature_groups=[FixedRollingWindow()]):
     for fg in feature_groups:
         fg.process_data()
         df = fg.merge_data_to_base(df)
-    return df
+    return df.reset_index()
