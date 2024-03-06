@@ -531,8 +531,9 @@ def vtreat_feature_selection(df, outcome_name, cols_to_copy=None, end_of_trainin
     import pandas as pd
     import vtreat
     
-    df.index = pd.to_datetime(df.index)  # ensure the index is datetime
-    end_of_training_date = pd.to_datetime(end_of_training_date)  # ensure the cutoff date is datetime
+    # ensure the dataframe index and cutoff date are datetime types
+    df.index = pd.to_datetime(df.index) 
+    end_of_training_date = pd.to_datetime(end_of_training_date) 
 
     # determine if task is binary classification or regression
     unique_values = df[outcome_name].unique()
@@ -551,15 +552,15 @@ def vtreat_feature_selection(df, outcome_name, cols_to_copy=None, end_of_trainin
         )
 
     # split data into training and test sets
-    Xy_train = df[df.index <= end_of_training_date]
-    Xy_test = df[df.index > end_of_training_date]
+    train = df[df.index <= end_of_training_date]
+    test = df[df.index > end_of_training_date]
 
     # apply vtreat transformations
-    Xy_train_processed = treatment.fit_transform(Xy_train)
-    Xy_test_processed = treatment.transform(Xy_test)
+    train_processed = treatment.fit_transform(train)
+    test_processed = treatment.transform(test)
 
     # concatenate the processed train and test sets
-    processed_df = pd.concat([Xy_train_processed, Xy_test_processed], axis=0)
+    processed_df = pd.concat([train_processed, test_processed], axis=0)
 
     # get list of recommended features plus the outcome variable
     features_to_keep = treatment.score_frame_[treatment.score_frame_['recommended']]['variable'].tolist()
@@ -567,8 +568,74 @@ def vtreat_feature_selection(df, outcome_name, cols_to_copy=None, end_of_trainin
 
     # select the recommended features plus the outcome from the processed dataframe
     processed_df_rec = processed_df[features_to_keep]
-
+    
+    # print how many features were selected
+    print(f"There were {processed_df.shape[1]-1} features selected out of {df.shape[1]-1} original features\n")
+    
     return processed_df_rec
+
+
+#################################################################################
+##### Function to perform feature selection using sequential algorithms
+#################################################################################
+def sequential_feature_selection(df, outcome_name, estimator, forward=True, end_of_training_date='2022-05-01'):
+    """
+    Performs feature selection on a dataframe, automatically detecting if the task is
+    classification or regression based on the outcome's cardinality. Splits the data into
+    features and outcome based on 'outcome_name', and into training and testing sets based
+    on a date index and a provided split date.
+    
+    Parameters:
+    - df (pd.DataFrame): DataFrame containing features and outcome.
+    - outcome_name (str): Column name of the outcome variable in df.
+    - estimator: The machine learning estimator (compatible with scikit-learn).
+    - forward (bool): If True, perform forward selection. If False, perform backward selection.
+    - end_of_training_date (str or pd.Timestamp): Date to split the training and testing sets.
+    
+    Returns:
+    - processed_df (pd.DataFrame): DataFrame with the selected features and the outcome variable.
+    """
+    import numpy as np
+    import pandas as pd
+    from mlxtend.feature_selection import SequentialFeatureSelector as SFS
+    from sklearn.metrics import make_scorer, mean_squared_error
+
+    # ensure the dataframe index and cutoff date are datetime types
+    df.index = pd.to_datetime(df.index) 
+    end_of_training_date = pd.to_datetime(end_of_training_date) 
+    
+    # split the data into training and testing sets
+    train = df.loc[df.index <= end_of_training_date]
+    test = df.loc[df.index > end_of_training_date]
+    
+    # split features and outcome
+    X_train, y_train = train.drop(columns=[outcome_name]), train[outcome_name]
+
+    # detect if the task is classification (2 unique values) or regression
+    if len(np.unique(y_train)) == 2:
+        scoring = 'accuracy' # classification task
+    else:
+        scoring = make_scorer(mean_squared_error, greater_is_better=False, squared=False) # regression task
+    
+    # initialize and fit the Sequential Feature Selector
+    sfs = SFS(estimator=estimator, 
+              k_features='best',
+              forward=forward,
+              scoring=scoring,
+              cv=5)
+    sfs.fit(X_train, y_train)
+    
+    # get list of recommended features plus the outcome variable
+    features_to_keep = list(sfs.k_feature_names_)
+    features_to_keep.append(outcome_name)  # ensure outcome variable is included
+    
+    # select the recommended features plus the outcome from the processed dataframe
+    processed_df = df[features_to_keep]
+    
+    # print how many features were selected
+    print(f"There were {processed_df.shape[1]-1} features selected out of {df.shape[1]-1} original features\n") 
+
+    return processed_df
 
 
 #################################################################################

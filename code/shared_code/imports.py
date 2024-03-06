@@ -35,6 +35,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 
 # feature selection
 import vtreat
+from mlxtend.feature_selection import SequentialFeatureSelector as SFS
 
 # sampling
 from imblearn.over_sampling import RandomOverSampler, SMOTE, SMOTENC, ADASYN, BorderlineSMOTE
