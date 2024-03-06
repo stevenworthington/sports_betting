@@ -33,6 +33,9 @@ from sklearn.pipeline import Pipeline, make_pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.base import BaseEstimator, TransformerMixin
 
+# feature selection
+import vtreat
+
 # sampling
 from imblearn.over_sampling import RandomOverSampler, SMOTE, SMOTENC, ADASYN, BorderlineSMOTE
 from imblearn.under_sampling import RandomUnderSampler, ClusterCentroids
