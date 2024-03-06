@@ -503,7 +503,74 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season, feature_pre
     
     return pts_scaled_df, pm_scaled_df, res_scaled_df, kept_test_set_obs
 
-        
+
+#################################################################################
+##### Function to perform feature selection using the `vtreat` library
+#################################################################################
+def vtreat_feature_selection(df, outcome_name, cols_to_copy=None, end_of_training_date='2022-05-01'):
+    """
+    Applies vtreat processing to a given dataframe for feature selection and preprocessing, tailored
+    for either binary classification or regression tasks based on the nature of the outcome variable specified.
+
+    Parameters:
+    - df (pd.DataFrame): The input dataframe containing features and the outcome variable. The index
+      of the dataframe should be datetime to facilitate temporal splitting.
+    - outcome_name (str): The name of the column in `df` that represents the outcome variable. This
+      column determines whether the task is treated as binary classification or regression.
+    - cols_to_copy (list of str, optional): A list of column names from `df` to copy directly into the
+      processed dataframe without any transformation. Useful for including non-predictive information 
+      like IDs or dates for later use.
+    - end_of_training_date (str or pd.Timestamp): The cutoff date for splitting the dataframe into 
+      training and testing sets. Rows on or before this date are used for training, and rows after 
+      are used for testing. This string should be convertible to a pd.Timestamp.
+      
+    Returns:
+    - processed_df_rec (pd.DataFrame): A processed dataframe containing the recommended features by 
+      vtreat based on the training set, including the outcome variable.
+    """
+    import pandas as pd
+    import vtreat
+    
+    df.index = pd.to_datetime(df.index)  # ensure the index is datetime
+    end_of_training_date = pd.to_datetime(end_of_training_date)  # ensure the cutoff date is datetime
+
+    # determine if task is binary classification or regression
+    unique_values = df[outcome_name].unique()
+    if len(unique_values) == 2:  # binary classification
+        treatment = vtreat.BinomialOutcomeTreatment(
+            outcome_name=outcome_name,
+            outcome_target=unique_values[1],  # assuming the second unique value as target, adjust as needed
+            cols_to_copy=cols_to_copy,
+            params={'filter_to_recommended': True, 'indicator_min_fraction': 0.01}
+        )
+    else:  # regression
+        treatment = vtreat.NumericOutcomeTreatment(
+            outcome_name=outcome_name,
+            cols_to_copy=cols_to_copy,
+            params={'filter_to_recommended': True, 'indicator_min_fraction': 0.01}
+        )
+
+    # split data into training and test sets
+    Xy_train = df[df.index <= end_of_training_date]
+    Xy_test = df[df.index > end_of_training_date]
+
+    # apply vtreat transformations
+    Xy_train_processed = treatment.fit_transform(Xy_train)
+    Xy_test_processed = treatment.transform(Xy_test)
+
+    # concatenate the processed train and test sets
+    processed_df = pd.concat([Xy_train_processed, Xy_test_processed], axis=0)
+
+    # get list of recommended features plus the outcome variable
+    features_to_keep = treatment.score_frame_[treatment.score_frame_['recommended']]['variable'].tolist()
+    features_to_keep.append(outcome_name)  # ensure outcome variable is included
+
+    # select the recommended features plus the outcome from the processed dataframe
+    processed_df_rec = processed_df[features_to_keep]
+
+    return processed_df_rec
+
+
 #################################################################################
 ##### Function to create an expanding window time series split
 #################################################################################
