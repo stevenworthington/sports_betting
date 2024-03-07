@@ -9,3 +9,7 @@ class FeatureGroup(ABC):
     @abstractmethod
     def merge_data_to_base(self, base_df):
         pass
+
+    def add_to(self, base_df):
+        self.process_data()
+        return self.merge_data_to_base(base_df)
