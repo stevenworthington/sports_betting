@@ -4,6 +4,7 @@ from . import (
     ALL_GAMES_BOX_SCORES,
     RECENT_GAMES_BOX_SCORES,
     THIRTY_YEARS_DASH_STATS,
+    BOX_SCORE_ADVANCED_STATISTICS,
 )
 from .. import SPAM_DATA_ROOT
 
@@ -13,9 +14,12 @@ import pandas as pd
 
 
 files = {
-    ALL_GAMES_BOX_SCORES: team_stats.get_all_games_with_league_finder,
-    RECENT_GAMES_BOX_SCORES: lambda: team_stats.get_games_within_seasons(22021),
+    ALL_GAMES_BOX_SCORES: game_stats.get_all_games_with_league_finder,
+    RECENT_GAMES_BOX_SCORES: lambda: game_stats.get_games_within_seasons(22021),
     THIRTY_YEARS_DASH_STATS: team_stats.get_thirty_years_dash_team_stats,
+    BOX_SCORE_ADVANCED_STATISTICS: lambda: game_stats.get_adv_stats_for_games_within_seasons(
+        22021
+    ),
 }
 
 
