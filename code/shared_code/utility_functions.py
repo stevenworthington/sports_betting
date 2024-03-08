@@ -516,62 +516,66 @@ def load_and_scale_data(input_data, seasons_to_keep, training_season, feature_pr
 ##### Function to perform feature selection using the `vtreat` library
 #################################################################################
 def filter_feature_selection(df, outcome_name, split_date='2022-05-01', corr_threshold=0.1, 
-                             pairwise_corr_threshold=0.7, vif_threshold=10.0):
+                              second_stage_filter='feature_correlation', pairwise_corr_threshold=0.7, vif_threshold=100.0):
     """
-    Performs feature selection based on filter methods including correlation with the outcome,
-    pairwise correlation among features, and variance inflation factor (VIF). Each approach
-    starts with the original feature set. Splits the original dataframe into training based
-    on dates in the index.
+    Performs feature selection in two stages:
+    1. Checks Spearman correlation between features and outcome and selects features above a threshold.
+    2. Based on the argument 'second_stage_filter', either checks for high pairwise correlations among features
+       or checks for high Variance Inflation Factor (VIF) for the subset of features from the first stage.
     
     Parameters:
     - df (pd.DataFrame): DataFrame containing the features and the outcome variable.
     - outcome_name (str): Name of the outcome variable.
     - split_date (str or pd.Timestamp): Date to split the training set.
-    - corr_threshold (float): Threshold for correlation with the outcome variable.
-    - pairwise_corr_threshold (float): Threshold for pairwise correlation among features.
-    - vif_threshold (float): Threshold for the Variance Inflation Factor (VIF).
+    - corr_threshold (float): Threshold for Spearman correlation with the outcome variable.
+    - second_stage_filter (str): Either 'feature_correlation' or 'VIF' to select the second stage filtering method.
+    - pairwise_corr_threshold (float): Threshold for pairwise correlation among features (if used).
+    - vif_threshold (float): Threshold for the Variance Inflation Factor (VIF) (if used).
 
     Returns:
-    - selection_dict (dict): Dictionary with names of features retained by each approach.
+    - selection_dict (dict): Dictionary with names of features retained after each stage.
     """
     import numpy as np
     import pandas as pd
     import json
     from statsmodels.stats.outliers_influence import variance_inflation_factor
-    from scipy.stats import pearsonr, spearmanr
-
-    # prepare the DataFrame and split into training set
+    from scipy.stats import spearmanr
+    
+    # prepare and split the DataFrame
     df.index = pd.to_datetime(df.index)
     train_df = df.loc[df.index <= pd.to_datetime(split_date)]
     X_train = train_df.drop(columns=[outcome_name])
     y_train = train_df[outcome_name]
     
-    selection_dict = {}
-    
-    # correlation with the outcome
-    corr_method = spearmanr if len(np.unique(y_train)) == 2 else pearsonr
-    correlations = X_train.apply(lambda x: abs(corr_method(x, y_train)[0]))
+    # stage 1: Spearman correlation with the outcome
+    correlations = X_train.apply(lambda x: abs(spearmanr(x, y_train)[0]))
     selected_by_corr = correlations[correlations > corr_threshold].index.tolist()
-    selection_dict['outcome_correlation'] = selected_by_corr
     
-    # pairwise correlation among features
-    corr_matrix = X_train.corr().abs()
-    upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-    to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > pairwise_corr_threshold)]
-    selected_by_pairwise = [feature for feature in X_train.columns if feature not in to_drop]
-    selection_dict['feature_correlation'] = selected_by_pairwise
+    # prepare dictionary to store selections
+    selection_dict = {'selected_by_outcome_correlation': selected_by_corr}
     
-    # Variance Inflation Factor (VIF)
-    vif_df = pd.DataFrame()
-    vif_df["VIF"] = [variance_inflation_factor(X_train.values, i) for i in range(X_train.shape[1])]
-    vif_df["feature"] = X_train.columns
-    selected_by_vif = vif_df[vif_df["VIF"] < vif_threshold]["feature"].tolist()
-    selection_dict['VIF'] = selected_by_vif
+    # stage 2: feature Correlation or VIF
+    X_train_filtered = X_train[selected_by_corr]
+    
+    if second_stage_filter == 'feature_correlation':
+        # check pairwise correlation among the filtered features
+        corr_matrix = X_train_filtered.corr().abs()
+        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > pairwise_corr_threshold)]
+        selected_features = [feature for feature in selected_by_corr if feature not in to_drop]
+        selection_dict['selected_by_outcome_and_feature_correlation'] = selected_features
+        
+    elif second_stage_filter == 'VIF':
+        # Compute VIF for the filtered features
+        vif_data = pd.DataFrame()
+        vif_data["feature"] = X_train_filtered.columns
+        vif_data["VIF"] = [variance_inflation_factor(X_train_filtered.values, i) for i in range(len(X_train_filtered.columns))]
+        selected_features = vif_data[vif_data["VIF"] < vif_threshold]["feature"].tolist()
+        selection_dict['selected_by_outcome_correlation_and_VIF'] = selected_features
+        
+    else:
+        raise ValueError("Invalid second_stage_filter value. Choose either 'feature_correlation' or 'VIF'.")
 
-    # find the intersection of all selected features
-    common_features = list(set(selected_by_corr) & set(selected_by_pairwise) & set(selected_by_vif))
-    selection_dict['feature_intersection'] = common_features
-    
     # pretty print the dictionary
     print(json.dumps(selection_dict, indent=4))
     
