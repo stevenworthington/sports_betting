@@ -406,16 +406,17 @@ def plot_team_bs_stats(df, team_col, feature_prefix, n_rows=3, n_cols=3):
 #################################################################################
 ##### Function to load, filter (by time), and scale data for modeling
 #################################################################################
-def load_and_scale_data(file_path, seasons_to_keep, training_season, feature_prefix, 
+def load_and_scale_data(input_data, seasons_to_keep, training_season, feature_prefixes, 
                         scaler_type='minmax', scale_target=False, csv_out=False, output_path=None):
     """
     Loads data from a specified file, filters for specific seasons, scales the features (and optionally the target),
     using only the training data for scaler fitting, and applies this scaling across specified seasons.
     
     Parameters:
-    - file_path (str): The file path to the CSV containing the data.
+    - input_data (str or pd.DataFrame): Either the file path to the CSV containing the data or a pandas DataFrame.
     - seasons_to_keep (list): A list of SEASON_IDs to include in the analysis.
     - training_season (str): The season that the scaler should be fitted on.
+    - feature_prefixes (list): A list of prefixes to identify feature names.
     - scaler_type (str): The type of scaler to use for feature scaling ('minmax' or 'standard').
     - scale_target (bool): Whether to scale the target variable(s) alongside the features.
     - csv_out(bool): Whether to return csv files with the missing / non-missing observations meta-data
@@ -429,7 +430,14 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season, feature_pre
     from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
     # load the dataset
-    df = pd.read_csv(file_path)
+    if isinstance(input_data, str):
+        df = pd.read_csv(input_data)
+    elif isinstance(input_data, pd.DataFrame):
+        df = input_data
+    else:
+        raise ValueError("input_data must be a pandas DataFrame or a file path as a string.")
+    
+    # set 'GAME_DATE' to datetime
     df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
     
     # filter the DataFrame for the specified seasons
@@ -443,8 +451,8 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season, feature_pre
     else:
         raise ValueError("scaler must be either 'minmax' or 'standard'")
     
-    # define feature names
-    feature_names = [col for col in df_filtered.columns if col.startswith(feature_prefix)]
+    # filter column names that start with any of the prefixes in feature_prefixes
+    feature_names = [col for col in df_filtered.columns if any(col.startswith(prefix) for prefix in feature_prefixes)]
     
     # identify rows with missing values in any of the feature_names and extract non-statistical data
     missing_features_rows = df_filtered[df_filtered[feature_names].isnull().any(axis=1)]
@@ -636,7 +644,7 @@ def vtreat_feature_selection(df, outcome_name, cols_to_copy=None, split_date='20
     processed_df_rec = processed_df[features_to_keep + [outcome_name]]
     
     # print how many features were selected
-    print(f"There were {processed_df.shape[1]-1} features selected out of {df.shape[1]-1} original features\n")
+    print(f"There were {len(features_to_keep)} features selected out of {df.shape[1]-1} original features\n")
     
     return processed_df_rec, features_to_keep
 
