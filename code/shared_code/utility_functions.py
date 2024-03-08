@@ -583,136 +583,75 @@ def filter_feature_selection(df, outcome_name, split_date='2022-05-01', corr_thr
 
 
 #################################################################################
-##### Function to perform feature selection using the `vtreat` library
-#################################################################################
-def vtreat_feature_selection(df, outcome_name, cols_to_copy=None, split_date='2022-05-01'):
-    """
-    Applies vtreat processing to a given dataframe for feature selection and preprocessing, tailored
-    for either binary classification or regression tasks based on the nature of the outcome variable specified.
-
-    Parameters:
-    - df (pd.DataFrame): The input dataframe containing features and the outcome variable. The index
-      of the dataframe should be datetime to facilitate temporal splitting.
-    - outcome_name (str): The name of the column in `df` that represents the outcome variable. This
-      column determines whether the task is treated as binary classification or regression.
-    - cols_to_copy (list of str, optional): A list of column names from `df` to copy directly into the
-      processed dataframe without any transformation. Useful for including non-predictive information 
-      like IDs or dates for later use.
-    - split_date (str or pd.Timestamp): The cutoff date for splitting the dataframe into 
-      training and testing sets. Rows on or before this date are used for training, and rows after 
-      are used for testing. This string should be convertible to a pd.Timestamp.
-      
-    Returns:
-    - processed_df_rec (pd.DataFrame): A processed dataframe containing the recommended features by 
-      vtreat based on the training set, including the outcome variable.
-    - features_to_keep (list): A list of the features that were selected.
-    """
-    import pandas as pd
-    import vtreat
-    
-    # ensure the dataframe index and cutoff date are datetime types
-    df.index = pd.to_datetime(df.index) 
-    split_date = pd.to_datetime(split_date) 
-
-    # determine if task is binary classification or regression
-    unique_values = df[outcome_name].unique()
-    if len(unique_values) == 2:  # binary classification
-        treatment = vtreat.BinomialOutcomeTreatment(
-            outcome_name=outcome_name,
-            outcome_target=unique_values[1],  # assuming the second unique value as target, adjust as needed
-            cols_to_copy=cols_to_copy,
-            params={'filter_to_recommended': True, 'indicator_min_fraction': 0.01}
-        )
-    else:  # regression
-        treatment = vtreat.NumericOutcomeTreatment(
-            outcome_name=outcome_name,
-            cols_to_copy=cols_to_copy,
-            params={'filter_to_recommended': True, 'indicator_min_fraction': 0.01}
-        )
-
-    # split data into training and test sets
-    train = df[df.index <= split_date]
-    test = df[df.index > split_date]
-
-    # apply vtreat transformations
-    train_processed = treatment.fit_transform(train)
-    test_processed = treatment.transform(test)
-
-    # concatenate the processed train and test sets
-    processed_df = pd.concat([train_processed, test_processed], axis=0)
-
-    # get list of recommended features plus the outcome variable
-    features_to_keep = treatment.score_frame_[treatment.score_frame_['recommended']]['variable'].tolist()
-
-    # select the recommended features plus the outcome from the processed dataframe
-    processed_df_rec = processed_df[features_to_keep + [outcome_name]]
-    
-    # print how many features were selected
-    print(f"There were {len(features_to_keep)} features selected out of {df.shape[1]-1} original features\n")
-    
-    return processed_df_rec, features_to_keep
-
-
-#################################################################################
 ##### Function to perform feature selection using sequential algorithms
 #################################################################################
-def sequential_feature_selection(df, outcome_name, estimator, split_date='2022-05-01'):
+def sequential_feature_selection(df, outcome_name, estimator, filtered_features,
+                                 split_date='2022-05-01', selection_mode='both',
+                                 combine_mode='separate'):
     """
-    Performs both forward and backward sequential feature selection on a dataframe, automatically 
-    detecting if the task is classification or regression based on the outcome's cardinality. 
-    Splits the data into features and outcome based on 'outcome_name', and into training sets 
-    based on a date index and a provided split date. Stores the resulting selected feature names 
-    in a dictionary.
+    Modified function to perform forward and/or backward sequential feature selection
+    on a pre-filtered list of features. 
 
     Parameters:
     - df (pd.DataFrame): DataFrame containing features and outcome.
-    - outcome_name (str): Column name of the outcome variable in df.
-    - estimator: The machine learning estimator (compatible with scikit-learn).
-    - split_date (str or pd.Timestamp): Date to split the training and testing sets.
+    - outcome_name (str): Column name of the outcome variable.
+    - estimator: Machine learning estimator compatible with scikit-learn.
+    - filtered_features (list): List of pre-filtered feature names to be considered.
+    - split_date (str or pd.Timestamp): Date to split the training set.
+    - selection_mode (str): 'forward', 'backward', or 'both' to indicate which selection modes to run.
+    - combine_mode (str): 'separate', 'union', or 'intersection'; applicable if selection_mode is 'both'.
+                          Determines how to combine the results of forward and backward selection.
 
     Returns:
-    - selection_dict (dict): Dictionary with keys 'forward_selected' and 'backward_selected' containing
-      lists of the selected feature names for both forward and backward selection.
+    - selection_dict (dict): Dictionary with selected feature names based on the selection and combine modes.
     """
     import numpy as np
     import pandas as pd
     import json
     from mlxtend.feature_selection import SequentialFeatureSelector as SFS
     from sklearn.metrics import make_scorer, mean_squared_error
-
-    df.index = pd.to_datetime(df.index)
-    split_date = pd.to_datetime(split_date)
     
-    # split data into training set based on the split_date
-    train_df = df.loc[df.index <= split_date]
-    X_train = train_df.drop(columns=[outcome_name])
+    df.index = pd.to_datetime(df.index)
+    train_df = df.loc[df.index <= pd.to_datetime(split_date)]
+    X_train = train_df[filtered_features]
     y_train = train_df[outcome_name]
+    
+    if len(np.unique(y_train)) == 2:
+        scoring = 'accuracy'
+    else:
+        scoring = make_scorer(mean_squared_error, greater_is_better=False, squared=False)
     
     selection_dict = {}
 
-    # determine if task is classification or regression and set scoring accordingly
-    if len(np.unique(y_train)) == 2:
-        scoring = 'accuracy'  # classification task
+    # determine selection modes to run
+    modes_to_run = []
+    if selection_mode in ['forward', 'both']:
+        modes_to_run.append('forward')
+    if selection_mode in ['backward', 'both']:
+        modes_to_run.append('backward')
+    
+    selected_features = {}
+    for mode in modes_to_run:
+        sfs = SFS(estimator=estimator,
+                  k_features='best',
+                  forward=(mode == 'forward'),
+                  scoring=scoring,
+                  cv=5)
+        sfs = sfs.fit(X_train, y_train)
+        selected_features[mode] = list(sfs.k_feature_names_)
+    
+    # combine results based on combine_mode
+    if selection_mode == 'both':
+        if combine_mode == 'separate':
+            selection_dict['forward_selected'] = selected_features['forward']
+            selection_dict['backward_selected'] = selected_features['backward']
+        elif combine_mode == 'union':
+            selection_dict['union'] = list(set(selected_features['forward']) | set(selected_features['backward']))
+        elif combine_mode == 'intersection':
+            selection_dict['intersection'] = list(set(selected_features['forward']) & set(selected_features['backward']))
     else:
-        scoring = make_scorer(mean_squared_error, greater_is_better=False, squared=False)  # regression task
-
-    # forward selection
-    sfs_forward = SFS(estimator=estimator, 
-                      k_features='best',
-                      forward=True,
-                      scoring=scoring,
-                      cv=5)
-    sfs_forward = sfs_forward.fit(X_train, y_train)
-    selection_dict['forward_selected'] = list(sfs_forward.k_feature_names_)
-
-    # backward selection
-    sfs_backward = SFS(estimator=estimator,
-                       k_features='best',
-                       forward=False,
-                       scoring=scoring,
-                       cv=5)
-    sfs_backward = sfs_backward.fit(X_train, y_train)
-    selection_dict['backward_selected'] = list(sfs_backward.k_feature_names_)
+        # for single mode, just return the selected features
+        selection_dict[f'{selection_mode}_selected'] = selected_features[selection_mode]
 
     # pretty print the dictionary
     print(json.dumps(selection_dict, indent=4))
