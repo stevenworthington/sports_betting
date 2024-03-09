@@ -516,62 +516,66 @@ def load_and_scale_data(input_data, seasons_to_keep, training_season, feature_pr
 ##### Function to perform feature selection using the `vtreat` library
 #################################################################################
 def filter_feature_selection(df, outcome_name, split_date='2022-05-01', corr_threshold=0.1, 
-                             pairwise_corr_threshold=0.7, vif_threshold=10.0):
+                              second_stage_filter='feature_correlation', pairwise_corr_threshold=0.7, vif_threshold=100.0):
     """
-    Performs feature selection based on filter methods including correlation with the outcome,
-    pairwise correlation among features, and variance inflation factor (VIF). Each approach
-    starts with the original feature set. Splits the original dataframe into training based
-    on dates in the index.
+    Performs feature selection in two stages:
+    1. Checks Spearman correlation between features and outcome and selects features above a threshold.
+    2. Based on the argument 'second_stage_filter', either checks for high pairwise correlations among features
+       or checks for high Variance Inflation Factor (VIF) for the subset of features from the first stage.
     
     Parameters:
     - df (pd.DataFrame): DataFrame containing the features and the outcome variable.
     - outcome_name (str): Name of the outcome variable.
     - split_date (str or pd.Timestamp): Date to split the training set.
-    - corr_threshold (float): Threshold for correlation with the outcome variable.
-    - pairwise_corr_threshold (float): Threshold for pairwise correlation among features.
-    - vif_threshold (float): Threshold for the Variance Inflation Factor (VIF).
+    - corr_threshold (float): Threshold for Spearman correlation with the outcome variable.
+    - second_stage_filter (str): Either 'feature_correlation' or 'VIF' to select the second stage filtering method.
+    - pairwise_corr_threshold (float): Threshold for pairwise correlation among features (if used).
+    - vif_threshold (float): Threshold for the Variance Inflation Factor (VIF) (if used).
 
     Returns:
-    - selection_dict (dict): Dictionary with names of features retained by each approach.
+    - selection_dict (dict): Dictionary with names of features retained after each stage.
     """
     import numpy as np
     import pandas as pd
     import json
     from statsmodels.stats.outliers_influence import variance_inflation_factor
-    from scipy.stats import pearsonr, spearmanr
-
-    # prepare the DataFrame and split into training set
+    from scipy.stats import spearmanr
+    
+    # prepare and split the DataFrame
     df.index = pd.to_datetime(df.index)
     train_df = df.loc[df.index <= pd.to_datetime(split_date)]
     X_train = train_df.drop(columns=[outcome_name])
     y_train = train_df[outcome_name]
     
-    selection_dict = {}
-    
-    # correlation with the outcome
-    corr_method = spearmanr if len(np.unique(y_train)) == 2 else pearsonr
-    correlations = X_train.apply(lambda x: abs(corr_method(x, y_train)[0]))
+    # stage 1: Spearman correlation with the outcome
+    correlations = X_train.apply(lambda x: abs(spearmanr(x, y_train)[0]))
     selected_by_corr = correlations[correlations > corr_threshold].index.tolist()
-    selection_dict['outcome_correlation'] = selected_by_corr
     
-    # pairwise correlation among features
-    corr_matrix = X_train.corr().abs()
-    upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-    to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > pairwise_corr_threshold)]
-    selected_by_pairwise = [feature for feature in X_train.columns if feature not in to_drop]
-    selection_dict['feature_correlation'] = selected_by_pairwise
+    # prepare dictionary to store selections
+    selection_dict = {'selected_by_outcome_correlation': selected_by_corr}
     
-    # Variance Inflation Factor (VIF)
-    vif_df = pd.DataFrame()
-    vif_df["VIF"] = [variance_inflation_factor(X_train.values, i) for i in range(X_train.shape[1])]
-    vif_df["feature"] = X_train.columns
-    selected_by_vif = vif_df[vif_df["VIF"] < vif_threshold]["feature"].tolist()
-    selection_dict['VIF'] = selected_by_vif
+    # stage 2: feature Correlation or VIF
+    X_train_filtered = X_train[selected_by_corr]
+    
+    if second_stage_filter == 'feature_correlation':
+        # check pairwise correlation among the filtered features
+        corr_matrix = X_train_filtered.corr().abs()
+        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > pairwise_corr_threshold)]
+        selected_features = [feature for feature in selected_by_corr if feature not in to_drop]
+        selection_dict['selected_by_outcome_and_feature_correlation'] = selected_features
+        
+    elif second_stage_filter == 'VIF':
+        # Compute VIF for the filtered features
+        vif_data = pd.DataFrame()
+        vif_data["feature"] = X_train_filtered.columns
+        vif_data["VIF"] = [variance_inflation_factor(X_train_filtered.values, i) for i in range(len(X_train_filtered.columns))]
+        selected_features = vif_data[vif_data["VIF"] < vif_threshold]["feature"].tolist()
+        selection_dict['selected_by_outcome_correlation_and_VIF'] = selected_features
+        
+    else:
+        raise ValueError("Invalid second_stage_filter value. Choose either 'feature_correlation' or 'VIF'.")
 
-    # find the intersection of all selected features
-    common_features = list(set(selected_by_corr) & set(selected_by_pairwise) & set(selected_by_vif))
-    selection_dict['feature_intersection'] = common_features
-    
     # pretty print the dictionary
     print(json.dumps(selection_dict, indent=4))
     
@@ -579,136 +583,75 @@ def filter_feature_selection(df, outcome_name, split_date='2022-05-01', corr_thr
 
 
 #################################################################################
-##### Function to perform feature selection using the `vtreat` library
-#################################################################################
-def vtreat_feature_selection(df, outcome_name, cols_to_copy=None, split_date='2022-05-01'):
-    """
-    Applies vtreat processing to a given dataframe for feature selection and preprocessing, tailored
-    for either binary classification or regression tasks based on the nature of the outcome variable specified.
-
-    Parameters:
-    - df (pd.DataFrame): The input dataframe containing features and the outcome variable. The index
-      of the dataframe should be datetime to facilitate temporal splitting.
-    - outcome_name (str): The name of the column in `df` that represents the outcome variable. This
-      column determines whether the task is treated as binary classification or regression.
-    - cols_to_copy (list of str, optional): A list of column names from `df` to copy directly into the
-      processed dataframe without any transformation. Useful for including non-predictive information 
-      like IDs or dates for later use.
-    - split_date (str or pd.Timestamp): The cutoff date for splitting the dataframe into 
-      training and testing sets. Rows on or before this date are used for training, and rows after 
-      are used for testing. This string should be convertible to a pd.Timestamp.
-      
-    Returns:
-    - processed_df_rec (pd.DataFrame): A processed dataframe containing the recommended features by 
-      vtreat based on the training set, including the outcome variable.
-    - features_to_keep (list): A list of the features that were selected.
-    """
-    import pandas as pd
-    import vtreat
-    
-    # ensure the dataframe index and cutoff date are datetime types
-    df.index = pd.to_datetime(df.index) 
-    split_date = pd.to_datetime(split_date) 
-
-    # determine if task is binary classification or regression
-    unique_values = df[outcome_name].unique()
-    if len(unique_values) == 2:  # binary classification
-        treatment = vtreat.BinomialOutcomeTreatment(
-            outcome_name=outcome_name,
-            outcome_target=unique_values[1],  # assuming the second unique value as target, adjust as needed
-            cols_to_copy=cols_to_copy,
-            params={'filter_to_recommended': True, 'indicator_min_fraction': 0.01}
-        )
-    else:  # regression
-        treatment = vtreat.NumericOutcomeTreatment(
-            outcome_name=outcome_name,
-            cols_to_copy=cols_to_copy,
-            params={'filter_to_recommended': True, 'indicator_min_fraction': 0.01}
-        )
-
-    # split data into training and test sets
-    train = df[df.index <= split_date]
-    test = df[df.index > split_date]
-
-    # apply vtreat transformations
-    train_processed = treatment.fit_transform(train)
-    test_processed = treatment.transform(test)
-
-    # concatenate the processed train and test sets
-    processed_df = pd.concat([train_processed, test_processed], axis=0)
-
-    # get list of recommended features plus the outcome variable
-    features_to_keep = treatment.score_frame_[treatment.score_frame_['recommended']]['variable'].tolist()
-
-    # select the recommended features plus the outcome from the processed dataframe
-    processed_df_rec = processed_df[features_to_keep + [outcome_name]]
-    
-    # print how many features were selected
-    print(f"There were {len(features_to_keep)} features selected out of {df.shape[1]-1} original features\n")
-    
-    return processed_df_rec, features_to_keep
-
-
-#################################################################################
 ##### Function to perform feature selection using sequential algorithms
 #################################################################################
-def sequential_feature_selection(df, outcome_name, estimator, split_date='2022-05-01'):
+def sequential_feature_selection(df, outcome_name, estimator, filtered_features,
+                                 split_date='2022-05-01', selection_mode='both',
+                                 combine_mode='separate'):
     """
-    Performs both forward and backward sequential feature selection on a dataframe, automatically 
-    detecting if the task is classification or regression based on the outcome's cardinality. 
-    Splits the data into features and outcome based on 'outcome_name', and into training sets 
-    based on a date index and a provided split date. Stores the resulting selected feature names 
-    in a dictionary.
+    Modified function to perform forward and/or backward sequential feature selection
+    on a pre-filtered list of features. 
 
     Parameters:
     - df (pd.DataFrame): DataFrame containing features and outcome.
-    - outcome_name (str): Column name of the outcome variable in df.
-    - estimator: The machine learning estimator (compatible with scikit-learn).
-    - split_date (str or pd.Timestamp): Date to split the training and testing sets.
+    - outcome_name (str): Column name of the outcome variable.
+    - estimator: Machine learning estimator compatible with scikit-learn.
+    - filtered_features (list): List of pre-filtered feature names to be considered.
+    - split_date (str or pd.Timestamp): Date to split the training set.
+    - selection_mode (str): 'forward', 'backward', or 'both' to indicate which selection modes to run.
+    - combine_mode (str): 'separate', 'union', or 'intersection'; applicable if selection_mode is 'both'.
+                          Determines how to combine the results of forward and backward selection.
 
     Returns:
-    - selection_dict (dict): Dictionary with keys 'forward_selected' and 'backward_selected' containing
-      lists of the selected feature names for both forward and backward selection.
+    - selection_dict (dict): Dictionary with selected feature names based on the selection and combine modes.
     """
     import numpy as np
     import pandas as pd
     import json
     from mlxtend.feature_selection import SequentialFeatureSelector as SFS
     from sklearn.metrics import make_scorer, mean_squared_error
-
-    df.index = pd.to_datetime(df.index)
-    split_date = pd.to_datetime(split_date)
     
-    # split data into training set based on the split_date
-    train_df = df.loc[df.index <= split_date]
-    X_train = train_df.drop(columns=[outcome_name])
+    df.index = pd.to_datetime(df.index)
+    train_df = df.loc[df.index <= pd.to_datetime(split_date)]
+    X_train = train_df[filtered_features]
     y_train = train_df[outcome_name]
+    
+    if len(np.unique(y_train)) == 2:
+        scoring = 'accuracy'
+    else:
+        scoring = make_scorer(mean_squared_error, greater_is_better=False, squared=False)
     
     selection_dict = {}
 
-    # determine if task is classification or regression and set scoring accordingly
-    if len(np.unique(y_train)) == 2:
-        scoring = 'accuracy'  # classification task
+    # determine selection modes to run
+    modes_to_run = []
+    if selection_mode in ['forward', 'both']:
+        modes_to_run.append('forward')
+    if selection_mode in ['backward', 'both']:
+        modes_to_run.append('backward')
+    
+    selected_features = {}
+    for mode in modes_to_run:
+        sfs = SFS(estimator=estimator,
+                  k_features='best',
+                  forward=(mode == 'forward'),
+                  scoring=scoring,
+                  cv=5)
+        sfs = sfs.fit(X_train, y_train)
+        selected_features[mode] = list(sfs.k_feature_names_)
+    
+    # combine results based on combine_mode
+    if selection_mode == 'both':
+        if combine_mode == 'separate':
+            selection_dict['forward_selected'] = selected_features['forward']
+            selection_dict['backward_selected'] = selected_features['backward']
+        elif combine_mode == 'union':
+            selection_dict['union'] = list(set(selected_features['forward']) | set(selected_features['backward']))
+        elif combine_mode == 'intersection':
+            selection_dict['intersection'] = list(set(selected_features['forward']) & set(selected_features['backward']))
     else:
-        scoring = make_scorer(mean_squared_error, greater_is_better=False, squared=False)  # regression task
-
-    # forward selection
-    sfs_forward = SFS(estimator=estimator, 
-                      k_features='best',
-                      forward=True,
-                      scoring=scoring,
-                      cv=5)
-    sfs_forward = sfs_forward.fit(X_train, y_train)
-    selection_dict['forward_selected'] = list(sfs_forward.k_feature_names_)
-
-    # backward selection
-    sfs_backward = SFS(estimator=estimator,
-                       k_features='best',
-                       forward=False,
-                       scoring=scoring,
-                       cv=5)
-    sfs_backward = sfs_backward.fit(X_train, y_train)
-    selection_dict['backward_selected'] = list(sfs_backward.k_feature_names_)
+        # for single mode, just return the selected features
+        selection_dict[f'{selection_mode}_selected'] = selected_features[selection_mode]
 
     # pretty print the dictionary
     print(json.dumps(selection_dict, indent=4))
