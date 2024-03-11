@@ -538,8 +538,11 @@ def filter_feature_selection(df, outcome_name, split_date='2022-05-01', corr_thr
     import numpy as np
     import pandas as pd
     import json
+    import time
     from statsmodels.stats.outliers_influence import variance_inflation_factor
     from scipy.stats import spearmanr
+    
+    start_time = time.time()
     
     # prepare and split the DataFrame
     df.index = pd.to_datetime(df.index)
@@ -575,7 +578,10 @@ def filter_feature_selection(df, outcome_name, split_date='2022-05-01', corr_thr
         
     else:
         raise ValueError("Invalid second_stage_filter value. Choose either 'feature_correlation' or 'VIF'.")
-
+    
+    end_time = time.time()
+    print(f"Total time taken: {end_time - start_time:.2f} seconds\n")
+  
     # pretty print the dictionary
     print(json.dumps(selection_dict, indent=4))
     
@@ -608,8 +614,11 @@ def sequential_feature_selection(df, outcome_name, estimator, filtered_features,
     import numpy as np
     import pandas as pd
     import json
+    import time
     from mlxtend.feature_selection import SequentialFeatureSelector as SFS
     from sklearn.metrics import make_scorer, mean_squared_error
+    
+    start_time = time.time()
     
     df.index = pd.to_datetime(df.index)
     train_df = df.loc[df.index <= pd.to_datetime(split_date)]
@@ -652,11 +661,94 @@ def sequential_feature_selection(df, outcome_name, estimator, filtered_features,
     else:
         # for single mode, just return the selected features
         selection_dict[f'{selection_mode}_selected'] = selected_features[selection_mode]
-
+    
+    end_time = time.time()
+    print(f"Total time taken: {end_time - start_time:.2f} seconds\n")
+    
     # pretty print the dictionary
     print(json.dumps(selection_dict, indent=4))
     
     return selection_dict
+
+
+#################################################################################
+##### Function to perform feature selection using embedded methods
+#################################################################################
+def embedded_feature_selection(df, outcome_name, prop_importance=None, 
+                               n_features=None, split_date='2022-05-01', plot=True):
+    """
+    Perform feature selection using an embedded method via a Random Forest model.
+    
+    This function fits a Random Forest to the data to determine feature importances,
+    then selects features based on specified importance thresholds or top N features.
+    It optionally plots the selected feature importances.
+    
+    Parameters:
+    - df (pd.DataFrame): The input DataFrame containing features and the outcome variable.
+    - outcome_name (str): The name of the outcome variable column in `df`.
+    - prop_importance (float, optional): The proportion of importance threshold above which
+      features will be selected. If specified, `n_features` should be None. Defaults to None.
+    - n_features (int, optional): The number of top features to select based on importance.
+      If specified, `prop_importance` should be None. Defaults to None.
+    - split_date (str, optional): The cutoff date for splitting `df` into training data.
+      Data up to and including this date is used for training. Defaults to '2022-05-01'.
+    - plot (bool, optional): If True, plots the feature importances of selected features.
+      Defaults to True.
+    
+    Returns:
+    - List[str]: A list of the names of the selected features based on the specified criteria.
+    """
+    import numpy as np
+    import pandas as pd
+    import time
+    import matplotlib.pyplot as plt
+    from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+    
+    start_time = time.time()
+    
+    # prepare and split the DataFrame
+    df.index = pd.to_datetime(df.index)
+    train_df = df.loc[df.index <= pd.to_datetime(split_date)]
+    X_train = train_df.drop(columns=[outcome_name])
+    y_train = train_df[outcome_name]
+    
+    # set up the random forest model instance
+    if len(np.unique(y_train)) == 2:
+        rf = RandomForestClassifier(random_state=599, n_jobs=-1, n_estimators=500, max_depth=8, max_features=0.3)
+    else:
+        rf = RandomForestRegressor(random_state=599, n_jobs=-1, n_estimators=500, max_depth=8, max_features=0.3)
+
+    # fit the random forest model
+    rf.fit(X_train, y_train)
+    
+    # create a DataFrame for feature importances
+    feature_importances = pd.DataFrame(
+        {'importance': rf.feature_importances_ / rf.feature_importances_.max()},
+        index=X_train.columns.tolist(),
+        columns=['importance']).sort_values('importance', ascending=True)
+
+    # get top features
+    if prop_importance is not None:
+        best_features = feature_importances.loc[feature_importances['importance'] >= prop_importance]
+    elif n_features is not None:
+        best_features = feature_importances.tail(n_features)
+    else:
+        # if no selection criteria are provided, consider all features
+        print("No selection criteria provided. Considering all features.")
+        best_features = feature_importances
+
+    if plot==True:
+        # plot feature importances
+        best_features.plot(kind='barh', figsize=(10, 8), fontsize=12)
+        plt.title("Feature Importances from Random Forest Model")
+        plt.xlabel("Feature")
+        plt.ylabel("Importance")
+        plt.show()
+
+    end_time = time.time()
+    print(f"Total time taken: {end_time - start_time:.2f} seconds\n")
+    
+    return best_features.index.tolist()
 
 
 #################################################################################
@@ -996,18 +1088,20 @@ def calculate_metrics(y_true, model_outputs, threshold=0.5, verbose=True):
     """
     from sklearn.metrics import mean_squared_error, roc_auc_score, accuracy_score, f1_score
     import numpy as np
+    from scipy.stats import mode
 
     metrics = {}  # dictionary to store calculated metrics
 
-    unique_values = np.unique(y_true)
-    if len(unique_values) == 2:  # binary classification
+    if len(np.unique(y_true)) == 2:  # binary classification
         pred_labels = [1 if p > threshold else 0 for p in model_outputs]
         metrics['pred_labels'] = pred_labels
         metrics['average_accuracy'] = accuracy_score(y_true, pred_labels)
         metrics['overall_auc'] = roc_auc_score(y_true, model_outputs)
         metrics['average_f1_score'] = f1_score(y_true, pred_labels)
+        most_frequent_class = mode(y_true)[0]  # find the most common class in y_true 
+        metrics['baseline_accuracy'] = (y_true == most_frequent_class).mean()  # proportion of y_true that is the most frequent class
         if verbose:
-            print(f"Classification Metrics:\n- Average Accuracy: {metrics['average_accuracy']:.2f}\n- Overall AUC: {metrics['overall_auc']:.2f}\n- Average F1 Score: {metrics['average_f1_score']:.2f}")
+            print(f"Classification Metrics:\n- Baseline Accuracy: {metrics['baseline_accuracy']:.2f}\n- Average Accuracy: {metrics['average_accuracy']:.2f}\n- Overall AUC: {metrics['overall_auc']:.2f}\n- Average F1 Score: {metrics['average_f1_score']:.2f}")
     else:  # regression
         metrics['average_rmse'] = mean_squared_error(y_true, model_outputs, squared=False)
         y_true_mean = np.full_like(y_true, np.mean(y_true))
