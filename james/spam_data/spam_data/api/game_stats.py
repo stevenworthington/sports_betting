@@ -81,10 +81,10 @@ def get_adv_stats_df(game_id_list):
             games = boxscoreadvancedv3.BoxScoreAdvancedV3(game_id=id)
             adv_games_stats_list.append(games.get_data_frames()[1])
             print(f"{id} retrieved successfully")
-            time.sleep(0.5)
+            time.sleep(1)
         except:
             print(f"Error retrieving {id}")
-            pass
+            time.sleep(1)
     adv_stats_df = pd.concat(adv_games_stats_list, ignore_index=True)
     adv_stats_df = adv_stats_df.drop_duplicates()
     return adv_stats_df
