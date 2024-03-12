@@ -1187,8 +1187,8 @@ def get_best_params(df, metric):
     - dict: A dictionary of the best hyperparameters, excluding the run ID and the metric itself.
     """
     # exclude 'run_id' and any metrics from the parameters
-    params_to_exclude = ['run_id', 'average_rmse', 'null_rmse', 'average_accuracy', 
-                         'average_f1_score', 'overall_auc', 'pred_labels']
+    params_to_exclude = ['run_id', 'average_rmse', 'null_rmse', 'baseline_accuracy',  
+                         'average_accuracy', 'average_f1_score', 'overall_auc', 'pred_labels']
 
     # determine whether to find the min or max value based on the metric
     if metric == 'average_rmse':
