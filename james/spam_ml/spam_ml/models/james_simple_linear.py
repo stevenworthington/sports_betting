@@ -44,7 +44,7 @@ class JamesSimpleLinearRegression(Model):
 
         model_path = os.path.join(self.path, "model.joblib")
         joblib.dump(self.model, model_path)
-        print("HERE")
+        print("Saving Complete")
 
     def load(self):
         super().load()
@@ -52,3 +52,18 @@ class JamesSimpleLinearRegression(Model):
 
         model_path = os.path.join(self.path, "model.joblib")
         self.model = joblib.load(model_path)
+        print("Load Successful")
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="JamesSimpleLinearRegression", description="Simple Model Runner Template"
+    )
+    parser.add_argument("-n", "--name", help="Model name, if model is to be loaded")
+
+    args = parser.parse_args()
+    model = JamesSimpleLinearRegression(name=args.name)
+    model.save()
+    print(model.name)
