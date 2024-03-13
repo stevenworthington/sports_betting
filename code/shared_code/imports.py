@@ -34,7 +34,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.base import BaseEstimator, TransformerMixin
 
 # feature selection
-import vtreat
+# import vtreat
 from mlxtend.feature_selection import SequentialFeatureSelector as SFS
 
 # sampling

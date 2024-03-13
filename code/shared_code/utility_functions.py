@@ -406,16 +406,17 @@ def plot_team_bs_stats(df, team_col, feature_prefix, n_rows=3, n_cols=3):
 #################################################################################
 ##### Function to load, filter (by time), and scale data for modeling
 #################################################################################
-def load_and_scale_data(file_path, seasons_to_keep, training_season, feature_prefix, 
+def load_and_scale_data(input_data, seasons_to_keep, training_season, feature_prefixes, 
                         scaler_type='minmax', scale_target=False, csv_out=False, output_path=None):
     """
     Loads data from a specified file, filters for specific seasons, scales the features (and optionally the target),
     using only the training data for scaler fitting, and applies this scaling across specified seasons.
     
     Parameters:
-    - file_path (str): The file path to the CSV containing the data.
+    - input_data (str or pd.DataFrame): Either the file path to the CSV containing the data or a pandas DataFrame.
     - seasons_to_keep (list): A list of SEASON_IDs to include in the analysis.
     - training_season (str): The season that the scaler should be fitted on.
+    - feature_prefixes (list): A list of prefixes to identify feature names.
     - scaler_type (str): The type of scaler to use for feature scaling ('minmax' or 'standard').
     - scale_target (bool): Whether to scale the target variable(s) alongside the features.
     - csv_out(bool): Whether to return csv files with the missing / non-missing observations meta-data
@@ -429,7 +430,14 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season, feature_pre
     from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
     # load the dataset
-    df = pd.read_csv(file_path)
+    if isinstance(input_data, str):
+        df = pd.read_csv(input_data)
+    elif isinstance(input_data, pd.DataFrame):
+        df = input_data
+    else:
+        raise ValueError("input_data must be a pandas DataFrame or a file path as a string.")
+    
+    # set 'GAME_DATE' to datetime
     df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
     
     # filter the DataFrame for the specified seasons
@@ -443,8 +451,8 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season, feature_pre
     else:
         raise ValueError("scaler must be either 'minmax' or 'standard'")
     
-    # define feature names
-    feature_names = [col for col in df_filtered.columns if col.startswith(feature_prefix)]
+    # filter column names that start with any of the prefixes in feature_prefixes
+    feature_names = [col for col in df_filtered.columns if any(col.startswith(prefix) for prefix in feature_prefixes)]
     
     # identify rows with missing values in any of the feature_names and extract non-statistical data
     missing_features_rows = df_filtered[df_filtered[feature_names].isnull().any(axis=1)]
@@ -507,135 +515,240 @@ def load_and_scale_data(file_path, seasons_to_keep, training_season, feature_pre
 #################################################################################
 ##### Function to perform feature selection using the `vtreat` library
 #################################################################################
-def vtreat_feature_selection(df, outcome_name, cols_to_copy=None, end_of_training_date='2022-05-01'):
+def filter_feature_selection(df, outcome_name, split_date='2022-05-01', corr_threshold=0.1, 
+                              second_stage_filter='feature_correlation', pairwise_corr_threshold=0.7, vif_threshold=100.0):
     """
-    Applies vtreat processing to a given dataframe for feature selection and preprocessing, tailored
-    for either binary classification or regression tasks based on the nature of the outcome variable specified.
-
+    Performs feature selection in two stages:
+    1. Checks Spearman correlation between features and outcome and selects features above a threshold.
+    2. Based on the argument 'second_stage_filter', either checks for high pairwise correlations among features
+       or checks for high Variance Inflation Factor (VIF) for the subset of features from the first stage.
+    
     Parameters:
-    - df (pd.DataFrame): The input dataframe containing features and the outcome variable. The index
-      of the dataframe should be datetime to facilitate temporal splitting.
-    - outcome_name (str): The name of the column in `df` that represents the outcome variable. This
-      column determines whether the task is treated as binary classification or regression.
-    - cols_to_copy (list of str, optional): A list of column names from `df` to copy directly into the
-      processed dataframe without any transformation. Useful for including non-predictive information 
-      like IDs or dates for later use.
-    - end_of_training_date (str or pd.Timestamp): The cutoff date for splitting the dataframe into 
-      training and testing sets. Rows on or before this date are used for training, and rows after 
-      are used for testing. This string should be convertible to a pd.Timestamp.
-      
+    - df (pd.DataFrame): DataFrame containing the features and the outcome variable.
+    - outcome_name (str): Name of the outcome variable.
+    - split_date (str or pd.Timestamp): Date to split the training set.
+    - corr_threshold (float): Threshold for Spearman correlation with the outcome variable.
+    - second_stage_filter (str): Either 'feature_correlation' or 'VIF' to select the second stage filtering method.
+    - pairwise_corr_threshold (float): Threshold for pairwise correlation among features (if used).
+    - vif_threshold (float): Threshold for the Variance Inflation Factor (VIF) (if used).
+
     Returns:
-    - processed_df_rec (pd.DataFrame): A processed dataframe containing the recommended features by 
-      vtreat based on the training set, including the outcome variable.
+    - selection_dict (dict): Dictionary with names of features retained after each stage.
     """
+    import numpy as np
     import pandas as pd
-    import vtreat
+    import json
+    import time
+    from statsmodels.stats.outliers_influence import variance_inflation_factor
+    from scipy.stats import spearmanr
     
-    # ensure the dataframe index and cutoff date are datetime types
-    df.index = pd.to_datetime(df.index) 
-    end_of_training_date = pd.to_datetime(end_of_training_date) 
-
-    # determine if task is binary classification or regression
-    unique_values = df[outcome_name].unique()
-    if len(unique_values) == 2:  # binary classification
-        treatment = vtreat.BinomialOutcomeTreatment(
-            outcome_name=outcome_name,
-            outcome_target=unique_values[1],  # assuming the second unique value as target, adjust as needed
-            cols_to_copy=cols_to_copy,
-            params={'filter_to_recommended': True, 'indicator_min_fraction': 0.01}
-        )
-    else:  # regression
-        treatment = vtreat.NumericOutcomeTreatment(
-            outcome_name=outcome_name,
-            cols_to_copy=cols_to_copy,
-            params={'filter_to_recommended': True, 'indicator_min_fraction': 0.01}
-        )
-
-    # split data into training and test sets
-    train = df[df.index <= end_of_training_date]
-    test = df[df.index > end_of_training_date]
-
-    # apply vtreat transformations
-    train_processed = treatment.fit_transform(train)
-    test_processed = treatment.transform(test)
-
-    # concatenate the processed train and test sets
-    processed_df = pd.concat([train_processed, test_processed], axis=0)
-
-    # get list of recommended features plus the outcome variable
-    features_to_keep = treatment.score_frame_[treatment.score_frame_['recommended']]['variable'].tolist()
-    features_to_keep.append(outcome_name)  # ensure outcome variable is included
-
-    # select the recommended features plus the outcome from the processed dataframe
-    processed_df_rec = processed_df[features_to_keep]
+    start_time = time.time()
     
-    # print how many features were selected
-    print(f"There were {processed_df.shape[1]-1} features selected out of {df.shape[1]-1} original features\n")
+    # prepare and split the DataFrame
+    df.index = pd.to_datetime(df.index)
+    train_df = df.loc[df.index <= pd.to_datetime(split_date)]
+    X_train = train_df.drop(columns=[outcome_name])
+    y_train = train_df[outcome_name]
     
-    return processed_df_rec
+    # stage 1: Spearman correlation with the outcome
+    correlations = X_train.apply(lambda x: abs(spearmanr(x, y_train)[0]))
+    selected_by_corr = correlations[correlations > corr_threshold].index.tolist()
+    
+    # prepare dictionary to store selections
+    selection_dict = {'selected_by_outcome_correlation': selected_by_corr}
+    
+    # stage 2: feature Correlation or VIF
+    X_train_filtered = X_train[selected_by_corr]
+    
+    if second_stage_filter == 'feature_correlation':
+        # check pairwise correlation among the filtered features
+        corr_matrix = X_train_filtered.corr().abs()
+        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > pairwise_corr_threshold)]
+        selected_features = [feature for feature in selected_by_corr if feature not in to_drop]
+        selection_dict['selected_by_outcome_and_feature_correlation'] = selected_features
+        
+    elif second_stage_filter == 'VIF':
+        # Compute VIF for the filtered features
+        vif_data = pd.DataFrame()
+        vif_data["feature"] = X_train_filtered.columns
+        vif_data["VIF"] = [variance_inflation_factor(X_train_filtered.values, i) for i in range(len(X_train_filtered.columns))]
+        selected_features = vif_data[vif_data["VIF"] < vif_threshold]["feature"].tolist()
+        selection_dict['selected_by_outcome_correlation_and_VIF'] = selected_features
+        
+    else:
+        raise ValueError("Invalid second_stage_filter value. Choose either 'feature_correlation' or 'VIF'.")
+    
+    end_time = time.time()
+    print(f"Total time taken: {end_time - start_time:.2f} seconds\n")
+  
+    # pretty print the dictionary
+    print(json.dumps(selection_dict, indent=4))
+    
+    return selection_dict
 
 
 #################################################################################
 ##### Function to perform feature selection using sequential algorithms
 #################################################################################
-def sequential_feature_selection(df, outcome_name, estimator, forward=True, end_of_training_date='2022-05-01'):
+def sequential_feature_selection(df, outcome_name, estimator, filtered_features,
+                                 split_date='2022-05-01', selection_mode='both',
+                                 combine_mode='separate'):
     """
-    Performs feature selection on a dataframe, automatically detecting if the task is
-    classification or regression based on the outcome's cardinality. Splits the data into
-    features and outcome based on 'outcome_name', and into training and testing sets based
-    on a date index and a provided split date.
-    
+    Modified function to perform forward and/or backward sequential feature selection
+    on a pre-filtered list of features. 
+
     Parameters:
     - df (pd.DataFrame): DataFrame containing features and outcome.
-    - outcome_name (str): Column name of the outcome variable in df.
-    - estimator: The machine learning estimator (compatible with scikit-learn).
-    - forward (bool): If True, perform forward selection. If False, perform backward selection.
-    - end_of_training_date (str or pd.Timestamp): Date to split the training and testing sets.
-    
+    - outcome_name (str): Column name of the outcome variable.
+    - estimator: Machine learning estimator compatible with scikit-learn.
+    - filtered_features (list): List of pre-filtered feature names to be considered.
+    - split_date (str or pd.Timestamp): Date to split the training set.
+    - selection_mode (str): 'forward', 'backward', or 'both' to indicate which selection modes to run.
+    - combine_mode (str): 'separate', 'union', or 'intersection'; applicable if selection_mode is 'both'.
+                          Determines how to combine the results of forward and backward selection.
+
     Returns:
-    - processed_df (pd.DataFrame): DataFrame with the selected features and the outcome variable.
+    - selection_dict (dict): Dictionary with selected feature names based on the selection and combine modes.
     """
     import numpy as np
     import pandas as pd
+    import json
+    import time
     from mlxtend.feature_selection import SequentialFeatureSelector as SFS
     from sklearn.metrics import make_scorer, mean_squared_error
-
-    # ensure the dataframe index and cutoff date are datetime types
-    df.index = pd.to_datetime(df.index) 
-    end_of_training_date = pd.to_datetime(end_of_training_date) 
     
-    # split the data into training and testing sets
-    train = df.loc[df.index <= end_of_training_date]
-    test = df.loc[df.index > end_of_training_date]
+    start_time = time.time()
     
-    # split features and outcome
-    X_train, y_train = train.drop(columns=[outcome_name]), train[outcome_name]
-
-    # detect if the task is classification (2 unique values) or regression
+    df.index = pd.to_datetime(df.index)
+    train_df = df.loc[df.index <= pd.to_datetime(split_date)]
+    X_train = train_df[filtered_features]
+    y_train = train_df[outcome_name]
+    
     if len(np.unique(y_train)) == 2:
-        scoring = 'accuracy' # classification task
+        scoring = 'accuracy'
     else:
-        scoring = make_scorer(mean_squared_error, greater_is_better=False, squared=False) # regression task
+        scoring = make_scorer(mean_squared_error, greater_is_better=False, squared=False)
     
-    # initialize and fit the Sequential Feature Selector
-    sfs = SFS(estimator=estimator, 
-              k_features='best',
-              forward=forward,
-              scoring=scoring,
-              cv=5)
-    sfs.fit(X_train, y_train)
-    
-    # get list of recommended features plus the outcome variable
-    features_to_keep = list(sfs.k_feature_names_)
-    features_to_keep.append(outcome_name)  # ensure outcome variable is included
-    
-    # select the recommended features plus the outcome from the processed dataframe
-    processed_df = df[features_to_keep]
-    
-    # print how many features were selected
-    print(f"There were {processed_df.shape[1]-1} features selected out of {df.shape[1]-1} original features\n") 
+    selection_dict = {}
 
-    return processed_df
+    # determine selection modes to run
+    modes_to_run = []
+    if selection_mode in ['forward', 'both']:
+        modes_to_run.append('forward')
+    if selection_mode in ['backward', 'both']:
+        modes_to_run.append('backward')
+    
+    selected_features = {}
+    for mode in modes_to_run:
+        sfs = SFS(estimator=estimator,
+                  k_features='best',
+                  forward=(mode == 'forward'),
+                  scoring=scoring,
+                  cv=5)
+        sfs = sfs.fit(X_train, y_train)
+        selected_features[mode] = list(sfs.k_feature_names_)
+    
+    # combine results based on combine_mode
+    if selection_mode == 'both':
+        if combine_mode == 'separate':
+            selection_dict['forward_selected'] = selected_features['forward']
+            selection_dict['backward_selected'] = selected_features['backward']
+        elif combine_mode == 'union':
+            selection_dict['union'] = list(set(selected_features['forward']) | set(selected_features['backward']))
+        elif combine_mode == 'intersection':
+            selection_dict['intersection'] = list(set(selected_features['forward']) & set(selected_features['backward']))
+    else:
+        # for single mode, just return the selected features
+        selection_dict[f'{selection_mode}_selected'] = selected_features[selection_mode]
+    
+    end_time = time.time()
+    print(f"Total time taken: {end_time - start_time:.2f} seconds\n")
+    
+    # pretty print the dictionary
+    print(json.dumps(selection_dict, indent=4))
+    
+    return selection_dict
+
+
+#################################################################################
+##### Function to perform feature selection using embedded methods
+#################################################################################
+def embedded_feature_selection(df, outcome_name, prop_importance=None, 
+                               n_features=None, split_date='2022-05-01', plot=True):
+    """
+    Perform feature selection using an embedded method via a Random Forest model.
+    
+    This function fits a Random Forest to the data to determine feature importances,
+    then selects features based on specified importance thresholds or top N features.
+    It optionally plots the selected feature importances.
+    
+    Parameters:
+    - df (pd.DataFrame): The input DataFrame containing features and the outcome variable.
+    - outcome_name (str): The name of the outcome variable column in `df`.
+    - prop_importance (float, optional): The proportion of importance threshold above which
+      features will be selected. If specified, `n_features` should be None. Defaults to None.
+    - n_features (int, optional): The number of top features to select based on importance.
+      If specified, `prop_importance` should be None. Defaults to None.
+    - split_date (str, optional): The cutoff date for splitting `df` into training data.
+      Data up to and including this date is used for training. Defaults to '2022-05-01'.
+    - plot (bool, optional): If True, plots the feature importances of selected features.
+      Defaults to True.
+    
+    Returns:
+    - List[str]: A list of the names of the selected features based on the specified criteria.
+    """
+    import numpy as np
+    import pandas as pd
+    import time
+    import matplotlib.pyplot as plt
+    from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+    
+    start_time = time.time()
+    
+    # prepare and split the DataFrame
+    df.index = pd.to_datetime(df.index)
+    train_df = df.loc[df.index <= pd.to_datetime(split_date)]
+    X_train = train_df.drop(columns=[outcome_name])
+    y_train = train_df[outcome_name]
+    
+    # set up the random forest model instance
+    if len(np.unique(y_train)) == 2:
+        rf = RandomForestClassifier(random_state=599, n_jobs=-1, n_estimators=500, max_depth=8, max_features=0.3)
+    else:
+        rf = RandomForestRegressor(random_state=599, n_jobs=-1, n_estimators=500, max_depth=8, max_features=0.3)
+
+    # fit the random forest model
+    rf.fit(X_train, y_train)
+    
+    # create a DataFrame for feature importances
+    feature_importances = pd.DataFrame(
+        {'importance': rf.feature_importances_ / rf.feature_importances_.max()},
+        index=X_train.columns.tolist(),
+        columns=['importance']).sort_values('importance', ascending=True)
+
+    # get top features
+    if prop_importance is not None:
+        best_features = feature_importances.loc[feature_importances['importance'] >= prop_importance]
+    elif n_features is not None:
+        best_features = feature_importances.tail(n_features)
+    else:
+        # if no selection criteria are provided, consider all features
+        print("No selection criteria provided. Considering all features.")
+        best_features = feature_importances
+
+    if plot==True:
+        # plot feature importances
+        best_features.plot(kind='barh', figsize=(10, 8), fontsize=12)
+        plt.title("Feature Importances from Random Forest Model")
+        plt.xlabel("Feature")
+        plt.ylabel("Importance")
+        plt.show()
+
+    end_time = time.time()
+    print(f"Total time taken: {end_time - start_time:.2f} seconds\n")
+    
+    return best_features.index.tolist()
 
 
 #################################################################################
@@ -975,18 +1088,20 @@ def calculate_metrics(y_true, model_outputs, threshold=0.5, verbose=True):
     """
     from sklearn.metrics import mean_squared_error, roc_auc_score, accuracy_score, f1_score
     import numpy as np
+    from scipy.stats import mode
 
     metrics = {}  # dictionary to store calculated metrics
 
-    unique_values = np.unique(y_true)
-    if len(unique_values) == 2:  # binary classification
+    if len(np.unique(y_true)) == 2:  # binary classification
         pred_labels = [1 if p > threshold else 0 for p in model_outputs]
         metrics['pred_labels'] = pred_labels
         metrics['average_accuracy'] = accuracy_score(y_true, pred_labels)
         metrics['overall_auc'] = roc_auc_score(y_true, model_outputs)
         metrics['average_f1_score'] = f1_score(y_true, pred_labels)
+        most_frequent_class = mode(y_true)[0]  # find the most common class in y_true 
+        metrics['baseline_accuracy'] = (y_true == most_frequent_class).mean()  # proportion of y_true that is the most frequent class
         if verbose:
-            print(f"Classification Metrics:\n- Average Accuracy: {metrics['average_accuracy']:.2f}\n- Overall AUC: {metrics['overall_auc']:.2f}\n- Average F1 Score: {metrics['average_f1_score']:.2f}")
+            print(f"Classification Metrics:\n- Baseline Accuracy: {metrics['baseline_accuracy']:.2f}\n- Average Accuracy: {metrics['average_accuracy']:.2f}\n- Overall AUC: {metrics['overall_auc']:.2f}\n- Average F1 Score: {metrics['average_f1_score']:.2f}")
     else:  # regression
         metrics['average_rmse'] = mean_squared_error(y_true, model_outputs, squared=False)
         y_true_mean = np.full_like(y_true, np.mean(y_true))
@@ -1072,8 +1187,8 @@ def get_best_params(df, metric):
     - dict: A dictionary of the best hyperparameters, excluding the run ID and the metric itself.
     """
     # exclude 'run_id' and any metrics from the parameters
-    params_to_exclude = ['run_id', 'average_rmse', 'null_rmse', 'average_accuracy', 
-                         'average_f1_score', 'overall_auc', 'pred_labels']
+    params_to_exclude = ['run_id', 'average_rmse', 'null_rmse', 'baseline_accuracy',  
+                         'average_accuracy', 'average_f1_score', 'overall_auc', 'pred_labels']
 
     # determine whether to find the min or max value based on the metric
     if metric == 'average_rmse':

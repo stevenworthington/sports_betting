@@ -3,7 +3,7 @@ from . import utility_functions as utl
 
 
 def reshape_box_scores_to_matchups():
-    team_bs_df = cache_filler.load_from_cache_or_return_none(RECENT_GAMES_BOX_SCORES)
+    team_bs_df = cache_filler.load_or_fetch_from_cache(RECENT_GAMES_BOX_SCORES)
     season_start_dates = ["2021-10-19", "2022-10-18", "2023-10-24"]
     season_end_dates = ["2022-04-10", "2023-04-09", "2024-04-14"]
     season_labels = ["2021-22", "2022-23", "2023-24"]
