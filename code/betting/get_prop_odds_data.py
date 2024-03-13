@@ -173,7 +173,7 @@ def get_odds_data(start_date, end_date):
             extract_odds(x)
 
 start_date = datetime.strptime('2023-08-01', '%Y-%m-%d')
-end_date = datetime.strptime('2024-02-20', '%Y-%m-%d')
+end_date = datetime.strptime('2024-03-06', '%Y-%m-%d')
 get_odds_data(start_date, end_date)
                   
       

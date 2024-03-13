@@ -46,24 +46,22 @@ def bet_wins(bet):
     date = bet['date']
     
     if bet['market'] in ('moneyline', 'spread'):
-        other_team = get_other_team(date, bet['team_name'])
-        return team_results(date, bet['team_name']) + bet['handicap'] > team_results(date, other_team)
+        # name is team name
+        other_team = get_other_team(date, bet['name'])
+        return team_results(date, bet['name']) + bet['handicap'] > team_results(date, other_team)
     
     elif bet['market'] == 'player_par':
-        res = player_results(date, bet['participant_name'])
-        if 'over' in bet['name'].lower():
-            return res['points'] + res['assists'] + res['rebounds'] > bet['handicap']                    
-        elif 'under' in bet['name'].lower():
-            return res['points'] + res['assists'] + res['rebounds'] < bet['handicap'] 
+        # name is team: player
+        pass
         
 def wager_result(amt, wager):
+    #returns net gain/loss from the wager
+    # odds are fractional odds
+    
     if wager['type']=='single':
         bet = wager['bet']
         if bet_wins(bet):
-            if bet['odds'] > 0:
-                return amt * bet['odds'] / 100
-            elif bet['odds'] < 0:
-                return amt / (-1*bet['odds']) * 100
+            return bet['payout_odds'] * amt
         else:
             return -1 * amt
         
@@ -71,23 +69,20 @@ def wager_result(amt, wager):
         if all([bet_wins(bet) for bet in wager['legs']]):
             outcome = amt
             for bet in wager['legs']:
-                if bet['odds'] > 0:
-                    outcome += outcome * bet['odds'] / 100
-                elif bet['odds'] < 0:
-                    outcome += outcome / (-1*bet['odds']) * 100
+                outcome += outcome * bet['payout_odds']
             return outcome - amt
         else:
             return -1 * amt
             
         
-def simulate_bets(wager_history):
+def simulate_wagers(wager_history):
     current_bankroll = wager_history['bankroll']
     bankroll_history = [current_bankroll]
     
     for wager in wager_history['wagers']:
         if wager_history['betting_units']=='units':
             amt = min(
-                current_bankroll * wager['amount'] / 100,
+                current_bankroll * wager['amount'],
                 current_bankroll
             )
         elif wager_history['betting_units']=='dollars':
@@ -97,3 +92,54 @@ def simulate_bets(wager_history):
         bankroll_history.append(current_bankroll)
         
     return bankroll_history
+
+# WAGER HISTORY FORMAT
+# wager_history = {
+#     'bankroll': 100000,
+#     'betting_units': 'units', # or dollars
+#     'wagers': [
+#         {
+#             'type':'parlay', 
+#             'amount':50, 
+#             'legs':[
+#                 {
+#                     'market': 'player_par',
+#                     'date': '2024-01-23',
+#                     'handicap': 48.5,
+#                     'payout_odds': 1.1,
+#                     'name': 'Over',
+#                     'participant_name': 'Nikola Jokic'
+#                 },
+#                 {
+#                     'market': 'spread',
+#                     'date': '2024-01-23',
+#                     'handicap': -2.5,
+#                     'payout_odds': .4,
+#                     'team_name': 'Denver Nuggets'
+#                 }
+#             ]
+#         },
+#         {
+#             'type':'single', 
+#             'amount':10, 
+#             'bet': {
+#                 'market': 'moneyline',
+#                 'date': '2024-01-24',
+#                 'handicap': 0,
+#                 'payout_odds': 1.95,
+#                 'team_name': 'Charlotte Hornets'
+#             }
+#         },
+#         {
+#             'type':'single', 
+#             'amount':10, 
+#             'bet': {
+#                 'market': 'spread',
+#                 'date': '2024-01-24',
+#                 'handicap': 8.5,
+#                 'payout_odds': .66,
+#                 'team_name': 'Washington Wizards'
+#             }
+#         }
+#     ]
+# }
