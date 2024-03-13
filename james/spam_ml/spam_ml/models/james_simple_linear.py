@@ -65,5 +65,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     model = JamesSimpleLinearRegression(name=args.name)
-    model.save()
-    print(model.name)
+    if args.name is None:
+        model.train()
+        model.save()
+        print(model.name)
