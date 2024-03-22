@@ -64,4 +64,4 @@ class FixedRollingWindow(BoxScoreFeatureGroup):
         return self.df
 
     def merge_data_to_base(self, base_df):
-        return self.df.join(base_df.set_index("GAME_ID"))
+        return self.df.join(base_df.reset_index().set_index("GAME_ID"))

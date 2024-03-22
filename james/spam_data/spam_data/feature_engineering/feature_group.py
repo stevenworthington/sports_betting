@@ -13,3 +13,7 @@ class FeatureGroup(ABC):
     def add_to(self, base_df):
         self.process_data()
         return self.merge_data_to_base(base_df)
+    
+    def __call__(self, base_df):
+        self.process_data()
+        return self.merge_data_to_base(base_df)
