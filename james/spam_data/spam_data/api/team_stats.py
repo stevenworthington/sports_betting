@@ -16,6 +16,7 @@ from functools import wraps
 
 
 month_map = {
+    "september": 1,
     "november": 2,
     "december": 3,
     "january": 4,
@@ -45,21 +46,28 @@ def get_thirty_years_dash_team_stats():
 
     for season in seasons:
         for month in months:
-            print(f"Querying season {season}, month {month}")
-            # query for months
-            ldts = leaguedashteamstats.LeagueDashTeamStats(month=month, season=season)
-            # get the first DataFrame of those returned
-            df = ldts.get_data_frames()[0]
+            try:
+                print(f"Querying season {season}, month {month}")
+                # query for months
+                ldts = leaguedashteamstats.LeagueDashTeamStats(
+                    month=month, season=season, measure_type_detailed_defense="Advanced"
+                )
+                # get the first DataFrame of those returned
+                df = ldts.get_data_frames()[0]
 
-            # add columns for 'season' and 'month'
-            df["SEASON"] = season
-            df["MONTH"] = month
+                # add columns for 'season' and 'month'
+                df["SEASON"] = season
+                df["MONTH"] = month
+                cal_month = (month + 9) % 12
+                df["CALENDAR_MONTH"] = cal_month if cal_month != 0 else 12
 
-            # append the DataFrame to the list
-            ldts_list.append(df)
+                # append the DataFrame to the list
+                ldts_list.append(df)
 
-            # add time delay between requests
-            time.sleep(3)
+                # add time delay between requests
+                time.sleep(1)
+            except:
+                print(f"Exception {season} {month}")
 
     # concatenate all DataFrames in the list into one large DataFrame
     ldts_df = pd.concat(ldts_list, ignore_index=True)

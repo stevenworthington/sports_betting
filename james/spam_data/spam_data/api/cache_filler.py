@@ -55,6 +55,16 @@ def load_path_from_cache_or_none(file_path: str):
     return None
 
 
+def clear_cache(file_name: str):
+    if file_name not in files:
+        return False
+    file_path = os.path.join(api_data_cache_path, file_name)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        return True
+    return False
+
+
 if __name__ == "__main__":
     import argparse
 
