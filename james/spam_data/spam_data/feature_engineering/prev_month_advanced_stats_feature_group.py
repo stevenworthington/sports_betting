@@ -27,10 +27,8 @@ class PrevMonthAdvancedStatsFeatureGroup(FeatureGroup):
                 left_on=["SEASON_ID", f"{pref}TEAM_ID", "PREV_MONTH"],
                 right_on=["SEASON", "TEAM_ID", "CALENDAR_MONTH"],
             )
-            print(merged.columns)
             merged = merged.drop(columns=["SEASON", "CALENDAR_MONTH", "TEAM_ID"])
             merged = merged.rename(
                 columns=lambda x: (f"{pref}{x}" if x in self.df.columns else x)
             )
-            print(merged.columns)
         return merged
