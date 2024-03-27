@@ -20,7 +20,7 @@ class PrevMonthAdvancedStatsFeatureGroup(FeatureGroup):
     def merge_data_to_base(self, base_df):
         base_df["MONTH"] = base_df.GAME_DATE.dt.month
         base_df["PREV_MONTH"] = base_df.MONTH.apply(lambda x: x - 1 if x > 1 else 12)
-        merged = base_df
+        merged = base_df.reset_index()
         for pref in ["HOME_", "AWAY_"]:
             merged = merged.merge(
                 self.df,
