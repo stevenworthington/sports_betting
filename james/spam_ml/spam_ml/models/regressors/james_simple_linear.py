@@ -1,5 +1,5 @@
-from .base_model import Model
-from .. import serialization as ser
+from ..base_model import Model
+from ... import serialization as ser
 
 from spam_data.feature_engineering import build_dataset, FixedRollingWindow
 
