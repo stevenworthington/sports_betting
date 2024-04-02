@@ -1,6 +1,6 @@
 {
-    "alpha": 4,
-    "gamma": 7,
+    "alpha": 6,
+    "gamma": 5,
     "lambda": 3,
     "learning_rate": 0.5,
     "max_depth": 2

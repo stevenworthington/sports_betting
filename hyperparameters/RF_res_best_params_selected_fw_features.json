@@ -1,6 +1,6 @@
 {
     "criterion": "gini",
-    "max_depth": 2,
+    "max_depth": 1,
     "max_features": "sqrt",
     "min_impurity_decrease": 0.1,
     "min_samples_leaf": 1,
