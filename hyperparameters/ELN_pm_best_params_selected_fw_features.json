@@ -1,5 +1,5 @@
 {
-    "alpha": 0.001,
+    "alpha": 0.1,
     "fit_intercept": true,
     "l1_ratio": 1.0,
     "max_iter": 10000,

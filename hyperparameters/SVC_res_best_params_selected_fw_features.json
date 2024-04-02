@@ -1,0 +1,10 @@
+{
+    "C": 0.0001,
+    "class_weight": null,
+    "coef0": 0.0,
+    "gamma": "scale",
+    "kernel": "rbf",
+    "probability": true,
+    "random_state": 599,
+    "shrinking": true
+}

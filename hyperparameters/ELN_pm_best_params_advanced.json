@@ -1,7 +1,7 @@
 {
-    "alpha": 100,
+    "alpha": 20,
     "fit_intercept": true,
-    "l1_ratio": 0.0,
+    "l1_ratio": 0.01,
     "max_iter": 10000,
     "random_state": 599,
     "selection": "cyclic"
