@@ -1,0 +1,7 @@
+{
+    "metric": "minkowski",
+    "n_jobs": -1,
+    "n_neighbors": 90,
+    "p": 1,
+    "weights": "uniform"
+}

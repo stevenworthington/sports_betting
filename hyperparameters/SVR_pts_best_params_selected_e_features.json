@@ -1,0 +1,8 @@
+{
+    "C": 7,
+    "coef0": 0.0,
+    "epsilon": 22,
+    "gamma": "scale",
+    "kernel": "rbf",
+    "shrinking": true
+}

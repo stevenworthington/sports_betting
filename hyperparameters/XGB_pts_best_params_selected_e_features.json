@@ -1,0 +1,7 @@
+{
+    "alpha": 5,
+    "gamma": 6,
+    "lambda": 10,
+    "learning_rate": 0.5,
+    "max_depth": 1
+}
