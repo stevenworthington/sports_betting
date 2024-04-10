@@ -741,14 +741,14 @@ def embedded_feature_selection(df, outcome_name, prop_importance=None,
         # plot feature importances
         best_features.plot(kind='barh', figsize=(10, 8), fontsize=12)
         plt.title("Feature Importances from Random Forest Model")
-        plt.xlabel("Feature")
-        plt.ylabel("Importance")
+        plt.ylabel("Feature")
+        plt.xlabel("Importance")
         plt.show()
 
     end_time = time.time()
     print(f"Total time taken: {end_time - start_time:.2f} seconds\n")
     
-    return best_features.index.tolist()
+    return best_features.index.tolist(), best_features
 
 
 #################################################################################
@@ -1187,8 +1187,8 @@ def get_best_params(df, metric):
     - dict: A dictionary of the best hyperparameters, excluding the run ID and the metric itself.
     """
     # exclude 'run_id' and any metrics from the parameters
-    params_to_exclude = ['run_id', 'average_rmse', 'null_rmse', 'baseline_accuracy',  
-                         'average_accuracy', 'average_f1_score', 'overall_auc', 'pred_labels']
+    params_to_exclude = ['run_id', 'average_rmse', 'null_rmse', 'baseline_accuracy'
+                         'average_f1_score', 'overall_auc', 'pred_labels']
 
     # determine whether to find the min or max value based on the metric
     if metric == 'average_rmse':

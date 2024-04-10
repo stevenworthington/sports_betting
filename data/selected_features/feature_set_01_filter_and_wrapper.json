@@ -1,37 +1,37 @@
 {
     "TOTAL_PTS": [
         "ROLL_HOME_FTM",
-        "ROLL_HOME_OPP_PTS_PAINT",
-        "ROLL_HOME_PTS_PAINT",
-        "ROLL_AWAY_PTS",
-        "ROLL_HOME_PTS_FB",
-        "ROLL_AWAY_OFF_LOOSE_BALLS_RECOVERED",
-        "ROLL_AWAY_DEF_BOXOUTS",
-        "ROLL_AWAY_estimatedPace",
         "ROLL_AWAY_PTS_PAINT",
-        "ROLL_AWAY_DFG_PCT",
         "ROLL_HOME_AST",
+        "ROLL_AWAY_OFF_LOOSE_BALLS_RECOVERED",
+        "ROLL_AWAY_estimatedPace",
         "ROLL_AWAY_assistToTurnover",
+        "ROLL_AWAY_DEF_BOXOUTS",
+        "ROLL_AWAY_DFG_PCT",
         "ROLL_HOME_OPP_TOV_PCT",
-        "ROLL_HOME_estimatedDefensiveRating"
+        "ROLL_AWAY_PTS",
+        "ROLL_HOME_estimatedDefensiveRating",
+        "ROLL_HOME_PTS_PAINT",
+        "ROLL_HOME_PTS_FB",
+        "ROLL_HOME_OPP_PTS_PAINT"
     ],
     "PLUS_MINUS": [
-        "ROLLDIFF_AWAY_STL",
-        "ROLL_HOME_CFG_PCT",
-        "ROLL_AWAY_OPP_PTS_PAINT",
         "ROLLDIFF_AWAY_PTS",
         "ROLLDIFF_HOME_PTS",
-        "ROLL_HOME_SCREEN_ASSISTS",
         "ROLLDIFF_AWAY_AST",
-        "ROLL_HOME_CFGA"
+        "ROLL_HOME_CFG_PCT",
+        "ROLLDIFF_AWAY_STL",
+        "ROLL_HOME_CFGA",
+        "ROLL_HOME_SCREEN_ASSISTS",
+        "ROLL_AWAY_OPP_PTS_PAINT"
     ],
     "GAME_RESULT": [
-        "ROLLDIFF_AWAY_STL",
-        "ROLL_HOME_DREB",
-        "ROLL_HOME_CFG_PCT",
         "ROLL_HOME_PTS",
         "ROLLDIFF_AWAY_PTS",
         "ROLLDIFF_HOME_PTS",
-        "ROLL_HOME_DIST"
+        "ROLL_HOME_CFG_PCT",
+        "ROLLDIFF_AWAY_STL",
+        "ROLL_HOME_DIST",
+        "ROLL_HOME_DREB"
     ]
 }
