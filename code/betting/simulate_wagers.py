@@ -21,13 +21,14 @@ def get_other_team(date, team_name):
     ]
     if len(temp)!=1:
         print(f'{date} {team_name} {len(temp)} results found')
-        
-    game = temp.iloc[0]
+        return None
     
+    game = temp.iloc[0]
     if game.home_team == team_name:
         return game.away_team
     elif game.away_team == team_name:
         return game.home_team
+
     
 def team_results(date, team_name):
     temp = odds_df[(odds_df.TEAM_NAME==team_name) & (odds_df.GAME_DATE==date)]
@@ -74,7 +75,6 @@ def wager_result(amt, wager):
         else:
             return -1 * amt
             
-        
 def simulate_wagers(wager_history):
     current_bankroll = wager_history['bankroll']
     bankroll_history = [current_bankroll]
@@ -92,54 +92,3 @@ def simulate_wagers(wager_history):
         bankroll_history.append(current_bankroll)
         
     return bankroll_history
-
-# WAGER HISTORY FORMAT
-# wager_history = {
-#     'bankroll': 100000,
-#     'betting_units': 'units', # or dollars
-#     'wagers': [
-#         {
-#             'type':'parlay', 
-#             'amount':50, 
-#             'legs':[
-#                 {
-#                     'market': 'player_par',
-#                     'date': '2024-01-23',
-#                     'handicap': 48.5,
-#                     'payout_odds': 1.1,
-#                     'name': 'Over',
-#                     'participant_name': 'Nikola Jokic'
-#                 },
-#                 {
-#                     'market': 'spread',
-#                     'date': '2024-01-23',
-#                     'handicap': -2.5,
-#                     'payout_odds': .4,
-#                     'team_name': 'Denver Nuggets'
-#                 }
-#             ]
-#         },
-#         {
-#             'type':'single', 
-#             'amount':10, 
-#             'bet': {
-#                 'market': 'moneyline',
-#                 'date': '2024-01-24',
-#                 'handicap': 0,
-#                 'payout_odds': 1.95,
-#                 'team_name': 'Charlotte Hornets'
-#             }
-#         },
-#         {
-#             'type':'single', 
-#             'amount':10, 
-#             'bet': {
-#                 'market': 'spread',
-#                 'date': '2024-01-24',
-#                 'handicap': 8.5,
-#                 'payout_odds': .66,
-#                 'team_name': 'Washington Wizards'
-#             }
-#         }
-#     ]
-# }
